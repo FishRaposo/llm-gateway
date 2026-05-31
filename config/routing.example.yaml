@@ -1,0 +1,46 @@
+default:
+  provider: openai
+  model: gpt-4o-mini
+
+rules:
+  - type: model_preference
+    model: gpt-4o
+    provider: openai
+    priority: 10
+
+  - type: model_preference
+    model: claude-sonnet-4-20250514
+    provider: anthropic
+    priority: 10
+
+  - type: cost_optimize
+    capability: chat
+    prefer_cheapest: true
+    provider: openai
+    priority: 5
+
+  - type: latency_optimize
+    capability: chat
+    max_latency_ms: 2000
+    provider: openai
+    priority: 8
+
+  - type: fallback_chain
+    models:
+      - gpt-4o
+      - gpt-4o-mini
+    chain:
+      - provider: openai
+        model: gpt-4o
+      - provider: anthropic
+        model: claude-sonnet-4-20250514
+      - provider: openai
+        model: gpt-4o-mini
+    priority: 1
+
+fallback:
+  enabled: true
+  max_retries: 3
+  circuit_breaker:
+    failure_threshold: 5
+    reset_timeout_ms: 60000

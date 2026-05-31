@@ -1,0 +1,40 @@
+enabled: true
+eval_order:
+  - model_restriction
+  - content_filter
+  - pii_detection
+  - request_modify
+
+rules:
+  - type: model_restriction
+    action: deny
+    allowed_models:
+      - gpt-4o-mini
+      - gpt-4o
+      - claude-sonnet-4-20250514
+
+  - type: content_filter
+    action: deny
+    patterns:
+      - password
+      - secret_key
+      - api_key
+      - private_key
+    case_sensitive: false
+
+  - type: pii_detection
+    action: deny
+    detect:
+      - ssn
+      - credit_card
+
+  - type: request_modify
+    action: modify
+    modifications:
+      - field: max_tokens
+        max: 4096
+        on_violation: clamp
+      - field: temperature
+        max: 2.0
+        min: 0.0
+        on_violation: clamp

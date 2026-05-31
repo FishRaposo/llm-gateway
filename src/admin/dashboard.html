@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>LLM Gateway Admin</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 0 auto; padding: 24px; }
+    .card { background: #f8fafc; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+    canvas { max-height: 300px; }
+  </style>
+</head>
+<body>
+  <h1>LLM Gateway Admin</h1>
+  <div class="card">
+    <h2>Request Volume</h2>
+    <canvas id="volumeChart"></canvas>
+  </div>
+  <div class="card">
+    <h2>Provider Health</h2>
+    <canvas id="healthChart"></canvas>
+  </div>
+  <script>
+    new Chart(document.getElementById('volumeChart'), {
+      type: 'line',
+      data: {
+        labels: ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00'],
+        datasets: [{ label: 'Requests', data: [120, 80, 450, 890, 720, 340], borderColor: '#3b82f6', tension: 0.3 }]
+      },
+      options: { responsive: true, scales: { y: { beginAtZero: true } } }
+    });
+    new Chart(document.getElementById('healthChart'), {
+      type: 'doughnut',
+      data: {
+        labels: ['OpenAI', 'Anthropic', 'Fallback'],
+        datasets: [{ data: [65, 30, 5], backgroundColor: ['#10b981', '#3b82f6', '#f59e0b'] }]
+      }
+    });
+  </script>
+</body>
+</html>

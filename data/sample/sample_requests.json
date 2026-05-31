@@ -1,0 +1,151 @@
+[
+  {
+    "description": "Simple chat completion",
+    "request": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        { "role": "user", "content": "Hello, how are you?" }
+      ]
+    }
+  },
+  {
+    "description": "Chat with system prompt",
+    "request": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        { "role": "system", "content": "You are a helpful coding assistant." },
+        { "role": "user", "content": "Write a function that reverses a string in TypeScript." }
+      ],
+      "temperature": 0.3,
+      "max_tokens": 1024
+    }
+  },
+  {
+    "description": "Streaming request",
+    "request": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        { "role": "user", "content": "Tell me a story about a robot." }
+      ],
+      "stream": true
+    }
+  },
+  {
+    "description": "Multi-turn conversation",
+    "request": {
+      "model": "gpt-4o",
+      "messages": [
+        { "role": "system", "content": "You are a math tutor." },
+        { "role": "user", "content": "What is the derivative of x^2?" },
+        { "role": "assistant", "content": "The derivative of x^2 is 2x." },
+        { "role": "user", "content": "What about x^3?" }
+      ]
+    }
+  },
+  {
+    "description": "Request with temperature and max_tokens",
+    "request": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        { "role": "user", "content": "Generate a creative name for a coffee shop." }
+      ],
+      "temperature": 1.5,
+      "max_tokens": 256
+    }
+  },
+  {
+    "description": "Long prompt",
+    "request": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        { "role": "user", "content": "Summarize the following text in 3 bullet points:\n\nArtificial intelligence (AI) is intelligence demonstrated by machines, as opposed to natural intelligence displayed by animals including humans. AI research has been defined as the field of study of intelligent agents, which refers to any system that perceives its environment and takes actions that maximize its chance of achieving its goals. The term artificial intelligence had previously been used to describe machines that mimic and display human cognitive skills that are associated with the human mind, such as learning and problem-solving. This definition has since been rejected by major AI researchers who now describe AI in terms of rationality and acting rationally, which does not limit how intelligence can be articulated." }
+      ]
+    }
+  },
+  {
+    "description": "Request with PII (should be blocked by policy)",
+    "request": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        { "role": "user", "content": "My SSN is 123-45-6789, can you help me?" }
+      ]
+    }
+  },
+  {
+    "description": "Request with blocked content pattern",
+    "request": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        { "role": "user", "content": "What is my api_key for the service?" }
+      ]
+    }
+  },
+  {
+    "description": "Request for blocked model (if policy restricts to gpt-4o-mini)",
+    "request": {
+      "model": "gpt-4-turbo",
+      "messages": [
+        { "role": "user", "content": "Hello!" }
+      ]
+    }
+  },
+  {
+    "description": "Empty messages array (invalid)",
+    "request": {
+      "model": "gpt-4o-mini",
+      "messages": []
+    }
+  },
+  {
+    "description": "Request with all parameters",
+    "request": {
+      "model": "gpt-4o",
+      "messages": [
+        { "role": "system", "content": "You are a concise assistant." },
+        { "role": "user", "content": "Explain quantum computing in one sentence." }
+      ],
+      "temperature": 0.7,
+      "max_tokens": 512,
+      "stream": false
+    }
+  },
+  {
+    "description": "Minimal valid request",
+    "request": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        { "role": "user", "content": "Hi" }
+      ]
+    }
+  },
+  {
+    "description": "Request to Anthropic model via gateway",
+    "request": {
+      "model": "claude-sonnet-4-20250514",
+      "messages": [
+        { "role": "user", "content": "What are the benefits of TypeScript?" }
+      ]
+    }
+  },
+  {
+    "description": "Large context request",
+    "request": {
+      "model": "gpt-4o",
+      "messages": [
+        { "role": "system", "content": "You are analyzing a large document." },
+        { "role": "user", "content": "Based on the document provided, what are the key findings?" }
+      ],
+      "max_tokens": 4096
+    }
+  },
+  {
+    "description": "Creative writing with high temperature",
+    "request": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        { "role": "user", "content": "Write a haiku about programming." }
+      ],
+      "temperature": 1.8
+    }
+  }
+]

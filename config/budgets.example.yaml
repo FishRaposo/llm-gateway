@@ -1,0 +1,5 @@
+enabled: true
+global_limit_usd: 1000
+default_key_budget_usd: 100
+period: monthly
+alert_threshold_percent: 80
