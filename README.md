@@ -4,7 +4,7 @@
 
 **Enterprise LLM proxy with fallback, caching, rate limiting, and budget enforcement.**
 
-Route requests across multiple providers (OpenAI, Anthropic) with automatic failover, response caching, and per-API-key cost control.
+Route requests across multiple providers (OpenAI, Anthropic, Gemini, Ollama) with automatic failover, response caching, and per-API-key cost control.
 
 [Quick Demo](#quick-demo) • [Architecture](#architecture) • [Configuration](#local-quickstart)
 
@@ -57,7 +57,10 @@ graph TD
     M4 --> M5[Rate Limit Middleware]
     M5 --> R[Router]
     R -->|Route to provider| P1[OpenAI Provider]
-    R -->|Or fallback| P2[Anthropic Provider]
+    R -->|Route to provider| P2[Anthropic Provider]
+    R -->|Route to provider| P3[Gemini Provider]
+    R -->|Route to provider| P4[Ollama Provider]
+    R -->|Or fallback| P1
     P1 -->|On failure| F[Fallback Handler]
     F --> P2
     P2 -->|Response| G

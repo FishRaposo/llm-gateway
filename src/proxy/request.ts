@@ -22,10 +22,22 @@ export function parseRequest(req: Request): RequestContext {
     throw new Error("messages must be a non-empty array");
   }
 
+  if (body.messages.length > 100) {
+    throw new Error("messages array exceeds maximum of 100 items");
+  }
+
   for (const msg of body.messages) {
     if (!msg.role || typeof msg.content !== "string") {
       throw new Error("Each message must have a 'role' and 'content' string");
     }
+    if (msg.content.length > 100_000) {
+      throw new Error("Each message 'content' must not exceed 100KB");
+    }
+  }
+
+  const systemMsg = body.messages.find((m: { role: string }) => m.role === "system");
+  if (systemMsg && systemMsg.content.length > 10_000) {
+    throw new Error("System message content must not exceed 10KB");
   }
 
   const authHeader = req.headers.authorization || "";
@@ -37,6 +49,7 @@ export function parseRequest(req: Request): RequestContext {
     requestId: uuidv4(),
     apiKey,
     apiKeyName: "default",
+    permissions: [],
     originalModel: body.model || "gpt-4o-mini",
     messages: body.messages.map((m: { role: string; content: string }) => ({
       role: m.role as "system" | "user" | "assistant" | "tool",

@@ -1,5 +1,6 @@
 /** Caching middleware for storing and retrieving LLM responses. */
 
+import { createHash } from "crypto";
 import type { Response } from "express";
 import type { RequestContext } from "../types/routing";
 import type { ProviderRequest, ProviderResponse } from "../types/provider";
@@ -74,16 +75,11 @@ export async function storeInCache(
 }
 
 /**
- * Simple hash function for generating cache keys.
+ * Generates a SHA-256 hex digest of a string, truncated to 16 hex chars (64 bits)
+ * for practical uniqueness while keeping keys reasonably short.
  * @param str - String to hash.
  * @returns Hex hash string.
  */
 function hashString(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return Math.abs(hash).toString(16).padStart(8, "0");
+  return createHash("sha256").update(str).digest("hex").slice(0, 16);
 }

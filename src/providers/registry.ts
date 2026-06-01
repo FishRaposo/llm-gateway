@@ -1,6 +1,8 @@
 import { BaseProvider } from "./base";
 import { OpenAIProvider } from "./openai";
 import { AnthropicProvider } from "./anthropic";
+import { GeminiProvider } from "./gemini";
+import { OllamaProvider } from "./ollama";
 import { MockProvider } from "./mock";
 import type { GatewayConfig } from "../types";
 
@@ -30,6 +32,20 @@ export function getProvider(name: string, config: GatewayConfig): BaseProvider {
         providerConfig.apiKey,
         providerConfig.baseUrl || "https://api.anthropic.com/v1",
         providerConfig.timeout || 30000
+      );
+      break;
+    case "gemini":
+      provider = new GeminiProvider(
+        providerConfig.apiKey,
+        providerConfig.baseUrl || "https://generativelanguage.googleapis.com/v1beta",
+        providerConfig.timeout || 30000
+      );
+      break;
+    case "ollama":
+      provider = new OllamaProvider(
+        providerConfig.apiKey,
+        providerConfig.baseUrl || "http://localhost:11434",
+        providerConfig.timeout || 120000
       );
       break;
     case "mock":

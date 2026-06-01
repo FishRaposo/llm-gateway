@@ -26,7 +26,7 @@ export class CacheStore {
     if (this.client) return this.client;
 
     try {
-      const Redis = require("ioredis");
+      const { default: Redis } = await import("ioredis");
       const client = new Redis(this.redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1, enableOfflineQueue: false });
       client.on("error", () => { /* suppress connection errors when Redis is unavailable */ });
       this.client = client;
@@ -59,7 +59,7 @@ export class CacheStore {
 
     const entry = inMemoryCache.get(key);
     if (!entry) return null;
-    if (Date.now() > entry.expiresAt) {
+    if (Date.now() >= entry.expiresAt) {
       inMemoryCache.delete(key);
       return null;
     }

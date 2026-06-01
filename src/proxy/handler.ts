@@ -25,6 +25,7 @@ export interface StorageInstances {
   auditLog: import("../storage/auditLog").AuditLogStorage;
   cacheStore: import("../storage/cacheStore").CacheStore;
   budgetTracker: import("../storage/budgetTracker").BudgetTracker;
+  apiKeyStore: import("../storage/apiKeyStore").ApiKeyStore;
 }
 
 /**

@@ -22,6 +22,7 @@ test:
 
 lint:
 	npx tsc --noEmit
+	npx eslint . --max-warnings 50
 
 build:
 	npx tsc

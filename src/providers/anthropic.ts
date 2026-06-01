@@ -3,26 +3,8 @@
 import { BaseProvider } from "./base";
 import { GatewayProviderError } from "./errors";
 import type { ProviderRequest, ProviderResponse, ModelInfo, ProviderHealth } from "../types/provider";
+import { getModelInfo as getSharedModelInfo } from "../shared/pricing";
 import { v4 as uuidv4 } from "uuid";
-
-const MODEL_PRICING: Record<string, ModelInfo> = {
-  "claude-sonnet-4-20250514": {
-    name: "claude-sonnet-4-20250514",
-    provider: "anthropic",
-    contextWindow: 200000,
-    maxOutputTokens: 8192,
-    pricing: { inputPerToken: 0.000003, outputPerToken: 0.000015 },
-    capabilities: ["chat", "streaming", "function_calling", "vision"],
-  },
-  "claude-3-5-haiku-20241022": {
-    name: "claude-3-5-haiku-20241022",
-    provider: "anthropic",
-    contextWindow: 200000,
-    maxOutputTokens: 8192,
-    pricing: { inputPerToken: 0.000001, outputPerToken: 0.000005 },
-    capabilities: ["chat", "streaming", "function_calling", "vision"],
-  },
-};
 
 /**
  * Anthropic provider implementation for the Messages API.
@@ -184,7 +166,7 @@ export class AnthropicProvider extends BaseProvider {
    */
   getModelInfo(model: string): ModelInfo {
     return (
-      MODEL_PRICING[model] ?? {
+      getSharedModelInfo(model) ?? {
         name: model,
         provider: "anthropic",
         contextWindow: 200000,

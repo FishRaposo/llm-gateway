@@ -4,6 +4,7 @@ export interface RequestContext {
   requestId: string;
   apiKey: string;
   apiKeyName: string;
+  permissions: string[];
   originalModel: string;
   messages: ChatMessage[];
   temperature?: number;

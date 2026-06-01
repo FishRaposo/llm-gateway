@@ -16,11 +16,11 @@ export class AuditLogStorage {
   /**
    * Initializes the SQLite database and creates the audit log table.
    */
-  private initialize(): void {
+  private async initialize(): Promise<void> {
     if (this.db) return;
 
     try {
-      const Database = require("better-sqlite3");
+      const { default: Database } = await import("better-sqlite3");
       const db = new Database(this.dbPath);
       this.db = db;
       db.exec(`
@@ -55,7 +55,7 @@ export class AuditLogStorage {
    * @param entry - Audit entry to persist.
    */
   async write(entry: AuditEntry): Promise<void> {
-    this.initialize();
+    await this.initialize();
 
     if (this.db) {
       const stmt = this.db.prepare(`
@@ -92,7 +92,7 @@ export class AuditLogStorage {
    * @returns Array of matching audit entries.
    */
   async query(filters: LogFilters): Promise<AuditEntry[]> {
-    this.initialize();
+    await this.initialize();
 
     if (!this.db) return [];
 
@@ -158,7 +158,7 @@ export class AuditLogStorage {
    * @returns True if the database is reachable, false otherwise.
    */
   async ping(): Promise<boolean> {
-    this.initialize();
+    await this.initialize();
     if (!this.db) return false;
     try {
       this.db.prepare("SELECT 1").get();

@@ -1,14 +1,14 @@
 /** Gateway configuration loader with validation. */
 
 import dotenv from "dotenv";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, watch } from "fs";
 import { join } from "path";
 import * as yaml from "js-yaml";
 import { z } from "zod";
 import type { GatewayConfig, ProviderConfig, RoutingConfig, PolicyConfig, BudgetConfig } from "./types";
 
 const ProviderConfigSchema: z.ZodType<ProviderConfig> = z.object({
-  type: z.enum(["openai", "anthropic", "mock"]),
+  type: z.enum(["openai", "anthropic", "gemini", "ollama", "mock"]),
   apiKey: z.string(),
   baseUrl: z.string().optional(),
   models: z.array(z.string()).optional(),
@@ -101,6 +101,26 @@ export function loadConfig(): GatewayConfig {
     };
   }
 
+  if (process.env.GEMINI_API_KEY) {
+    providers.gemini = {
+      type: "gemini",
+      apiKey: process.env.GEMINI_API_KEY,
+      baseUrl: process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta",
+      timeout: 30000,
+      maxRetries: 2,
+    };
+  }
+
+  if (process.env.OLLAMA_BASE_URL || process.env.OLLAMA_ENABLED === "true") {
+    providers.ollama = {
+      type: "ollama",
+      apiKey: "ollama",
+      baseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434",
+      timeout: 120000,
+      maxRetries: 1,
+    };
+  }
+
   const rawConfig = {
     port: parseInt(process.env.GATEWAY_PORT || "3000", 10),
     logLevel: process.env.LOG_LEVEL || "info",
@@ -123,6 +143,7 @@ export function loadConfig(): GatewayConfig {
 }
 
 let cachedConfig: GatewayConfig | null = null;
+let watcherStarted = false;
 
 /**
  * Returns a cached gateway configuration, loading it on first call.
@@ -133,4 +154,34 @@ export function getConfig(): GatewayConfig {
     cachedConfig = loadConfig();
   }
   return cachedConfig;
+}
+
+/**
+ * Invalidates the cached configuration, forcing a reload on next access.
+ */
+export function invalidateConfig(): void {
+  cachedConfig = null;
+}
+
+/**
+ * Watches config/*.yaml files for changes and invalidates the cached config.
+ * Should be called once after server startup.
+ * @param configDir - Directory containing YAML config files.
+ */
+export function watchConfig(configDir: string): void {
+  if (watcherStarted) return;
+  watcherStarted = true;
+
+  const files = ["routing.yaml", "policy.yaml", "budgets.yaml"];
+  for (const file of files) {
+    const path = join(configDir, file);
+    if (existsSync(path)) {
+      watch(path, (eventType) => {
+        if (eventType === "change") {
+          console.log(JSON.stringify({ level: "info", message: `Config file changed: ${file}` }));
+          invalidateConfig();
+        }
+      });
+    }
+  }
 }

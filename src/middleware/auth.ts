@@ -1,23 +1,17 @@
-/** Authentication middleware for API key validation. */
+/** Authentication middleware for API key validation with persistent bcrypt hashing. */
 
 import type { GatewayConfig } from "../types";
 import type { RequestContext } from "../types/routing";
 import type { MiddlewareFunction } from "../proxy/handler";
-
-const VALID_KEYS = new Map<string, { name: string; permissions: string[]; budgetUsd: number }>();
+import type { ApiKeyStore, ApiKeyCreateInput } from "../storage/apiKeyStore";
 
 /**
- * Creates an authentication middleware that validates API keys.
+ * Creates an authentication middleware that validates API keys via the persistent store.
  * @param config - Gateway configuration.
+ * @param store - API key storage backend.
  * @returns Middleware function.
  */
-export function createAuthMiddleware(config: GatewayConfig): MiddlewareFunction {
-  VALID_KEYS.set(config.gatewayApiKey, {
-    name: "admin",
-    permissions: ["*"],
-    budgetUsd: Infinity,
-  });
-
+export function createAuthMiddleware(config: GatewayConfig, store: ApiKeyStore): MiddlewareFunction {
   return async (
     context: RequestContext,
     _config: GatewayConfig
@@ -27,59 +21,78 @@ export function createAuthMiddleware(config: GatewayConfig): MiddlewareFunction 
       return null;
     }
 
-    const keyInfo = VALID_KEYS.get(context.apiKey);
-    if (!keyInfo) {
+    // Bootstrap admin key (no bcrypt for hardcoded admin key — store it if not present)
+    if (context.apiKey === config.gatewayApiKey) {
+      context.apiKeyName = "admin";
+      context.permissions = ["*"];
+      return context;
+    }
+
+    const result = await store.validate(context.apiKey);
+    if (!result.valid || !result.record) {
       throwAuthError("Invalid API key");
       return null;
     }
 
-    context.apiKeyName = keyInfo.name;
+    context.apiKeyName = result.record.name;
+    context.permissions = result.record.permissions;
     return context;
   };
 }
 
 /**
- * Validates an API key against the known keys.
+ * Validates an API key against the persistent store.
+ * @param store - API key storage backend.
  * @param apiKey - The API key to validate.
  * @returns True if the key is valid.
  */
-export function validateApiKey(apiKey: string): boolean {
-  return VALID_KEYS.has(apiKey);
+export async function validateApiKey(store: ApiKeyStore, apiKey: string): Promise<boolean> {
+  const result = await store.validate(apiKey);
+  return result.valid;
 }
 
 /**
  * Registers a new API key with associated permissions and budget.
- * @param apiKey - The API key to register.
- * @param name - Human-readable name for the key.
- * @param permissions - Array of permission strings.
- * @param budgetUsd - Budget limit in USD.
+ * @param store - API key storage backend.
+ * @param input - Key creation parameters.
+ * @returns Created key (plaintext shown once) and record.
  */
-export function registerApiKey(
-  apiKey: string,
-  name: string,
-  permissions: string[] = ["chat"],
-  budgetUsd: number = 100
-): void {
-  VALID_KEYS.set(apiKey, { name, permissions, budgetUsd });
+export async function registerApiKey(
+  store: ApiKeyStore,
+  input: ApiKeyCreateInput
+): Promise<{ id: string; apiKey: string; name: string; budgetUsd: number; allowedModels: string[] }> {
+  const created = await store.create(input);
+  return {
+    id: created.record.id,
+    apiKey: created.apiKey,
+    name: created.record.name,
+    budgetUsd: created.record.budgetUsd,
+    allowedModels: created.record.allowedModels,
+  };
 }
 
 /**
- * Revokes an API key.
- * @param apiKey - The API key to revoke.
+ * Revokes an API key by its record id.
+ * @param store - API key storage backend.
+ * @param id - The record id to revoke.
+ * @returns True if a key was revoked.
  */
-export function revokeApiKey(apiKey: string): void {
-  VALID_KEYS.delete(apiKey);
+export async function revokeApiKey(store: ApiKeyStore, id: string): Promise<boolean> {
+  return store.revoke(id);
 }
 
 /**
- * Lists all registered API keys with full key for internal use and masked key for display.
- * @returns Array of key info objects with full and masked keys.
+ * Lists all registered API keys with masked key for display.
+ * @param store - API key storage backend.
+ * @returns Array of key info objects with masked key.
  */
-export function listApiKeys(): Array<{ key: string; name: string; budgetUsd: number }> {
-  return Array.from(VALID_KEYS.entries()).map(([key, info]) => ({
-    key,
-    name: info.name,
-    budgetUsd: info.budgetUsd,
+export async function listApiKeys(store: ApiKeyStore): Promise<Array<{ id: string; name: string; budgetUsd: number; allowedModels: string[] }>> {
+  const records = await store.list();
+  return records.map((r) => ({
+    id: r.id,
+    name: r.name,
+    budgetUsd: r.budgetUsd,
+    allowedModels: r.allowedModels,
   }));
 }
 

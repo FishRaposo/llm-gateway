@@ -15,7 +15,7 @@ export interface GatewayConfig {
 }
 
 export interface ProviderConfig {
-  type: "openai" | "anthropic" | "mock";
+  type: "openai" | "anthropic" | "gemini" | "ollama" | "mock";
   apiKey: string;
   baseUrl?: string;
   models?: string[];

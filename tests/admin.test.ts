@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { validateApiKey, registerApiKey, revokeApiKey } from "../src/middleware/auth";
+import { ApiKeyStore } from "../src/storage/apiKeyStore";
 import { BudgetTracker } from "../src/storage/budgetTracker";
 import { CacheStore } from "../src/storage/cacheStore";
 import { AuditLogStorage } from "../src/storage/auditLog";
@@ -131,100 +132,109 @@ describe("Admin Endpoints", () => {
   });
 
   describe("POST /admin/keys", () => {
-    const testKey = `gw-test-${Date.now()}-abc123`;
+    let store: ApiKeyStore;
+    const createdIds: string[] = [];
 
-    afterAll(() => {
-      revokeApiKey(testKey);
+    beforeEach(() => {
+      store = new ApiKeyStore(":memory:");
     });
 
-    it("should register a new API key and make it validatable", () => {
-      registerApiKey(testKey, "test-admin-user", ["chat"], 100);
-
-      expect(validateApiKey(testKey)).toBe(true);
+    afterAll(async () => {
+      for (const id of createdIds) {
+        await revokeApiKey(store, id);
+      }
     });
 
-    it("should reject unregistered keys", () => {
-      expect(validateApiKey("non-existent-key")).toBe(false);
+    it("should register a new API key and make it validatable", async () => {
+      const created = await registerApiKey(store, { name: "test-admin-user", permissions: ["chat"], budgetUsd: 100 });
+      createdIds.push(created.id);
+
+      const valid = await validateApiKey(store, created.apiKey);
+      expect(valid).toBe(true);
     });
 
-    it("should allow registered key with custom budget", () => {
-      const customKey = `gw-custom-${Date.now()}-xyz`;
-      registerApiKey(customKey, "custom-user", ["chat"], 50);
-
-      expect(validateApiKey(customKey)).toBe(true);
-
-      revokeApiKey(customKey);
-      expect(validateApiKey(customKey)).toBe(false);
+    it("should reject unregistered keys", async () => {
+      const valid = await validateApiKey(store, "non-existent-key");
+      expect(valid).toBe(false);
     });
 
-    it("should allow registered key with full permissions", () => {
-      const adminKey = `gw-full-${Date.now()}-admin`;
-      registerApiKey(adminKey, "admin-user", ["*"], Infinity);
+    it("should allow registered key with custom budget", async () => {
+      const created = await registerApiKey(store, { name: "custom-user", permissions: ["chat"], budgetUsd: 50 });
+      createdIds.push(created.id);
 
-      expect(validateApiKey(adminKey)).toBe(true);
+      const valid = await validateApiKey(store, created.apiKey);
+      expect(valid).toBe(true);
 
-      revokeApiKey(adminKey);
+      await revokeApiKey(store, created.id);
+      const afterRevoke = await validateApiKey(store, created.apiKey);
+      expect(afterRevoke).toBe(false);
     });
 
-    it("should revoke a previously valid key", () => {
-      const key = `gw-revoke-${Date.now()}-test`;
-      registerApiKey(key, "temp-user", ["chat"], 10);
+    it("should allow registered key with full permissions", async () => {
+      const created = await registerApiKey(store, { name: "admin-user", permissions: ["*"], budgetUsd: 10000 });
+      createdIds.push(created.id);
 
-      expect(validateApiKey(key)).toBe(true);
+      const valid = await validateApiKey(store, created.apiKey);
+      expect(valid).toBe(true);
 
-      revokeApiKey(key);
-
-      expect(validateApiKey(key)).toBe(false);
+      await revokeApiKey(store, created.id);
     });
 
-    it("should support registering multiple keys independently", () => {
-      const key1 = `gw-multi-1-${Date.now()}`;
-      const key2 = `gw-multi-2-${Date.now()}`;
+    it("should revoke a previously valid key", async () => {
+      const created = await registerApiKey(store, { name: "temp-user", permissions: ["chat"], budgetUsd: 10 });
+      createdIds.push(created.id);
 
-      registerApiKey(key1, "user-1", ["chat"], 50);
-      registerApiKey(key2, "user-2", ["chat"], 75);
+      const validBefore = await validateApiKey(store, created.apiKey);
+      expect(validBefore).toBe(true);
 
-      expect(validateApiKey(key1)).toBe(true);
-      expect(validateApiKey(key2)).toBe(true);
+      await revokeApiKey(store, created.id);
 
-      revokeApiKey(key1);
-      expect(validateApiKey(key1)).toBe(false);
-      expect(validateApiKey(key2)).toBe(true);
+      const validAfter = await validateApiKey(store, created.apiKey);
+      expect(validAfter).toBe(false);
+    });
 
-      revokeApiKey(key2);
+    it("should support registering multiple keys independently", async () => {
+      const created1 = await registerApiKey(store, { name: "user-1", permissions: ["chat"], budgetUsd: 50 });
+      const created2 = await registerApiKey(store, { name: "user-2", permissions: ["chat"], budgetUsd: 75 });
+      createdIds.push(created1.id, created2.id);
+
+      expect(await validateApiKey(store, created1.apiKey)).toBe(true);
+      expect(await validateApiKey(store, created2.apiKey)).toBe(true);
+
+      await revokeApiKey(store, created1.id);
+      expect(await validateApiKey(store, created1.apiKey)).toBe(false);
+      expect(await validateApiKey(store, created2.apiKey)).toBe(true);
+
+      await revokeApiKey(store, created2.id);
     });
   });
 
   describe("Budget integration with API keys", () => {
     let budgetTracker: BudgetTracker;
+    let store: ApiKeyStore;
 
     beforeEach(async () => {
       budgetTracker = new BudgetTracker("redis://localhost:0");
+      store = new ApiKeyStore(":memory:");
     });
 
     it("should track budget separately per registered key", async () => {
-      const keyA = `gw-budget-a-${Date.now()}`;
-      const keyB = `gw-budget-b-${Date.now()}`;
+      const createdA = await registerApiKey(store, { name: "budget-user-a", permissions: ["chat"], budgetUsd: 100 });
+      const createdB = await registerApiKey(store, { name: "budget-user-b", permissions: ["chat"], budgetUsd: 200 });
 
-      registerApiKey(keyA, "budget-user-a", ["chat"], 100);
-      registerApiKey(keyB, "budget-user-b", ["chat"], 200);
+      await budgetTracker.setBudget(createdA.apiKey, 100);
+      await budgetTracker.setBudget(createdB.apiKey, 200);
 
-      await budgetTracker.setBudget(keyA, 100);
-      await budgetTracker.setBudget(keyB, 200);
+      await budgetTracker.deductBudget(createdA.apiKey, 25);
+      await budgetTracker.deductBudget(createdB.apiKey, 50);
 
-      await budgetTracker.deductBudget(keyA, 25);
-      await budgetTracker.deductBudget(keyB, 50);
-
-      const statusA = await budgetTracker.getBudgetStatus(keyA);
-      const statusB = await budgetTracker.getBudgetStatus(keyB);
+      const statusA = await budgetTracker.getBudgetStatus(createdA.apiKey);
+      const statusB = await budgetTracker.getBudgetStatus(createdB.apiKey);
 
       expect(statusA.used).toBe(25);
       expect(statusA.remaining).toBe(75);
       expect(statusB.used).toBe(50);
       expect(statusB.remaining).toBe(150);
-
-      revokeApiKey(keyA);
-      revokeApiKey(keyB);
     });
   });
 });

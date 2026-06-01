@@ -1,6 +1,6 @@
 /** Budget tracking storage using Redis for real-time spend management. */
 
-const inMemoryBudgets = new Map<string, { used: number; limit: number; period: string }>();
+const inMemoryBudgets = new Map<string, { used: number; limit: number; period: string; resetMonth: number }>();
 
 export class BudgetTracker {
   private redisUrl: string;
@@ -24,7 +24,7 @@ export class BudgetTracker {
     if (this.client) return this.client;
 
     try {
-      const Redis = require("ioredis");
+      const { default: Redis } = await import("ioredis");
       const client = new Redis(this.redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1, enableOfflineQueue: false });
       client.on("error", () => { /* suppress connection errors when Redis is unavailable */ });
       this.client = client;
@@ -39,6 +39,18 @@ export class BudgetTracker {
     }
   }
 
+  private currentMonth(): number {
+    return new Date().getMonth();
+  }
+
+  private maybeResetBudget(budget: { used: number; limit: number; period?: string; resetMonth?: number }): { used: number; limit: number } {
+    if (budget.period === "monthly" && budget.resetMonth !== undefined && budget.resetMonth !== this.currentMonth()) {
+      budget.used = 0;
+      budget.resetMonth = this.currentMonth();
+    }
+    return budget;
+  }
+
   /**
    * Gets the remaining budget for an API key.
    * @param key - API key identifier.
@@ -51,12 +63,14 @@ export class BudgetTracker {
     if (redis) {
       const data = await redis.get(budgetKey);
       if (!data) return Infinity;
-      const budget = JSON.parse(data) as { used: number; limit: number };
+      const budget = this.maybeResetBudget(JSON.parse(data) as { used: number; limit: number; period?: string; resetMonth?: number });
+      await redis.set(budgetKey, JSON.stringify(budget));
       return Math.max(0, budget.limit - budget.used);
     }
 
     const budget = inMemoryBudgets.get(budgetKey);
     if (!budget) return Infinity;
+    this.maybeResetBudget(budget);
     return Math.max(0, budget.limit - budget.used);
   }
 
@@ -72,14 +86,15 @@ export class BudgetTracker {
     if (redis) {
       const data = await redis.get(budgetKey);
       const budget = data
-        ? (JSON.parse(data) as { used: number; limit: number })
+        ? this.maybeResetBudget(JSON.parse(data) as { used: number; limit: number; period?: string; resetMonth?: number })
         : { used: 0, limit: Infinity };
       budget.used += amount;
       await redis.set(budgetKey, JSON.stringify(budget));
       return;
     }
 
-    const budget = inMemoryBudgets.get(budgetKey) ?? { used: 0, limit: Infinity, period: "monthly" };
+    const budget = inMemoryBudgets.get(budgetKey) ?? { used: 0, limit: Infinity, period: "monthly", resetMonth: this.currentMonth() };
+    this.maybeResetBudget(budget);
     budget.used += amount;
     inMemoryBudgets.set(budgetKey, budget);
   }
@@ -95,13 +110,13 @@ export class BudgetTracker {
 
     if (redis) {
       const data = await redis.get(budgetKey);
-      const existing = data ? (JSON.parse(data) as { used: number; limit: number }) : { used: 0, limit };
+      const existing = data ? (JSON.parse(data) as { used: number; limit: number; period?: string; resetMonth?: number }) : { used: 0, limit };
       existing.limit = limit;
       await redis.set(budgetKey, JSON.stringify(existing));
       return;
     }
 
-    const existing = inMemoryBudgets.get(budgetKey) ?? { used: 0, limit, period: "monthly" };
+    const existing = inMemoryBudgets.get(budgetKey) ?? { used: 0, limit, period: "monthly", resetMonth: this.currentMonth() };
     existing.limit = limit;
     inMemoryBudgets.set(budgetKey, existing);
   }
@@ -118,12 +133,14 @@ export class BudgetTracker {
     if (redis) {
       const data = await redis.get(budgetKey);
       if (!data) return { used: 0, limit: Infinity, remaining: Infinity };
-      const budget = JSON.parse(data) as { used: number; limit: number };
+      const budget = this.maybeResetBudget(JSON.parse(data) as { used: number; limit: number; period?: string; resetMonth?: number });
+      await redis.set(budgetKey, JSON.stringify(budget));
       return { used: budget.used, limit: budget.limit, remaining: Math.max(0, budget.limit - budget.used) };
     }
 
     const budget = inMemoryBudgets.get(budgetKey);
     if (!budget) return { used: 0, limit: Infinity, remaining: Infinity };
+    this.maybeResetBudget(budget);
     return { used: budget.used, limit: budget.limit, remaining: Math.max(0, budget.limit - budget.used) };
   }
 

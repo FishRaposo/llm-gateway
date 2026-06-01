@@ -4,7 +4,7 @@ import { CacheStore } from "../src/storage/cacheStore";
 import { generateCacheKey } from "../src/middleware/cache";
 import { evaluatePolicies } from "../src/middleware/policy";
 import type { RequestContext } from "../src/types/routing";
-import type { ModelPricing } from "../src/types/provider";
+import type { ModelPricing, ProviderResponse } from "../src/types/provider";
 import type { PolicyRuleConfig } from "../src/types";
 
 function calculateCost(usage: ProviderResponse["usage"], pricing: ModelPricing): number {

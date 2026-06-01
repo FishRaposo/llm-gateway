@@ -4,6 +4,8 @@ import type { GatewayConfig } from "../types";
 import type { RequestContext } from "../types/routing";
 import type { MiddlewareFunction } from "../proxy/handler";
 import type { BudgetTracker } from "../storage/budgetTracker";
+import { getPricing } from "../shared/pricing";
+import { countMessageTokens } from "../shared/tokenCounter";
 
 /**
  * Creates a budget middleware that checks and enforces spending limits per API key.
@@ -76,13 +78,15 @@ export async function trackSpend(
 }
 
 /**
- * Estimates the cost of a request based on token counting heuristics.
+ * Estimates the cost of a request using model-specific pricing.
+ * Uses characters / 4 as a token estimate, then multiplies by the
+ * selected model's input token price.
  * @param context - Request context.
  * @returns Estimated cost in USD.
  */
 function estimateRequestCost(context: RequestContext): number {
-  const totalChars = context.messages.reduce((sum, m) => sum + m.content.length, 0);
-  const estimatedTokens = Math.ceil(totalChars / 4);
-  const estimatedCostPerToken = 0.00001;
-  return estimatedTokens * estimatedCostPerToken;
+  const estimatedTokens = countMessageTokens(context.messages);
+  const pricing = getPricing(context.originalModel);
+  const inputPrice = pricing?.inputPerToken ?? 0.00001;
+  return estimatedTokens * inputPrice;
 }

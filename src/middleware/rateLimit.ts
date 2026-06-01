@@ -26,7 +26,7 @@ let redisUrl = "";
 export async function initRateLimitRedis(url: string): Promise<void> {
   redisUrl = url;
   try {
-    const Redis = require("ioredis");
+    const { default: Redis } = await import("ioredis");
     const client = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1, enableOfflineQueue: false });
     client.on("error", () => { /* suppress connection errors when Redis is unavailable */ });
     redisClient = client;

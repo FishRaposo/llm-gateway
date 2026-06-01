@@ -2,43 +2,9 @@
 
 import { BaseProvider } from "./base";
 import type { ProviderRequest, ProviderResponse, ModelInfo, ProviderHealth, ProviderError } from "../types/provider";
+import { getModelInfo as getSharedModelInfo } from "../shared/pricing";
 import { v4 as uuidv4 } from "uuid";
 import { GatewayProviderError } from "./errors";
-
-const MODEL_PRICING: Record<string, ModelInfo> = {
-  "gpt-4o": {
-    name: "gpt-4o",
-    provider: "openai",
-    contextWindow: 128000,
-    maxOutputTokens: 4096,
-    pricing: { inputPerToken: 0.000005, outputPerToken: 0.000015 },
-    capabilities: ["chat", "streaming", "function_calling", "vision", "json_mode"],
-  },
-  "gpt-4o-mini": {
-    name: "gpt-4o-mini",
-    provider: "openai",
-    contextWindow: 128000,
-    maxOutputTokens: 16384,
-    pricing: { inputPerToken: 0.00000015, outputPerToken: 0.0000006 },
-    capabilities: ["chat", "streaming", "function_calling", "vision", "json_mode"],
-  },
-  "gpt-4-turbo": {
-    name: "gpt-4-turbo",
-    provider: "openai",
-    contextWindow: 128000,
-    maxOutputTokens: 4096,
-    pricing: { inputPerToken: 0.00001, outputPerToken: 0.00003 },
-    capabilities: ["chat", "streaming", "function_calling", "vision"],
-  },
-  "gpt-3.5-turbo": {
-    name: "gpt-3.5-turbo",
-    provider: "openai",
-    contextWindow: 16385,
-    maxOutputTokens: 4096,
-    pricing: { inputPerToken: 0.0000005, outputPerToken: 0.0000015 },
-    capabilities: ["chat", "streaming", "function_calling"],
-  },
-};
 
 /**
  * OpenAI provider implementation for the chat completions API.
@@ -167,7 +133,7 @@ export class OpenAIProvider extends BaseProvider {
    */
   getModelInfo(model: string): ModelInfo {
     return (
-      MODEL_PRICING[model] ?? {
+      getSharedModelInfo(model) ?? {
         name: model,
         provider: "openai",
         contextWindow: 8192,

@@ -5,6 +5,7 @@ import type { GatewayConfig } from "../types";
 import type { AuditLogStorage } from "../storage/auditLog";
 import type { CacheStore } from "../storage/cacheStore";
 import type { BudgetTracker } from "../storage/budgetTracker";
+import type { ApiKeyStore } from "../storage/apiKeyStore";
 import { getUsageStats, getProviderHealth } from "./dashboard";
 import { validateApiKey, listApiKeys, registerApiKey, maskApiKey } from "../middleware/auth";
 
@@ -12,6 +13,7 @@ export interface AdminStorage {
   auditLog: AuditLogStorage;
   cacheStore: CacheStore;
   budgetTracker: BudgetTracker;
+  apiKeyStore: ApiKeyStore;
 }
 
 /**
@@ -23,9 +25,9 @@ export interface AdminStorage {
 export function createAdminRouter(storage: AdminStorage, config: GatewayConfig): Router {
   const router = Router();
 
-  router.use((req, _res, next) => {
+  router.use(async (req, _res, next) => {
     const apiKey = req.headers.authorization?.replace("Bearer ", "");
-    if (!apiKey || !validateApiKey(apiKey)) {
+    if (!apiKey || !(await validateApiKey(storage.apiKeyStore, apiKey))) {
       _res.status(401).json({ error: { message: "Unauthorized", code: "unauthorized" } });
       return;
     }
@@ -43,12 +45,12 @@ export function createAdminRouter(storage: AdminStorage, config: GatewayConfig):
 
   router.get("/budgets", async (_req, res) => {
     try {
-      const keys = listApiKeys();
+      const keys = await listApiKeys(storage.apiKeyStore);
       const budgets = [];
       for (const keyInfo of keys) {
-        const status = await storage.budgetTracker.getBudgetStatus(keyInfo.key);
+        const status = await storage.budgetTracker.getBudgetStatus(keyInfo.id);
         budgets.push({
-          key: maskApiKey(keyInfo.key),
+          key: maskApiKey(keyInfo.id),
           name: keyInfo.name,
           limitUsd: status.limit,
           usedUsd: status.used,
@@ -83,20 +85,18 @@ export function createAdminRouter(storage: AdminStorage, config: GatewayConfig):
 
   router.post("/keys", async (req, res) => {
     try {
-      const { name, budget_usd, rate_limit_rpm, allowed_models } = req.body;
-      const apiKey = `gw-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      const keyName = name || "unnamed";
-      const budget = budget_usd || config.budgets.defaultKeyBudgetUsd;
-      const models = allowed_models || ["*"];
-
-      registerApiKey(apiKey, keyName, models, budget);
+      const { name, budget_usd, allowed_models } = req.body;
+      const created = await registerApiKey(storage.apiKeyStore, {
+        name: name || "unnamed",
+        budgetUsd: budget_usd || config.budgets.defaultKeyBudgetUsd,
+        allowedModels: allowed_models || ["*"],
+      });
 
       res.json({
-        apiKey,
-        name: keyName,
-        budgetUsd: budget,
-        rateLimitRpm: rate_limit_rpm || 60,
-        allowedModels: models,
+        apiKey: created.apiKey,
+        name: created.name,
+        budgetUsd: created.budgetUsd,
+        allowedModels: created.allowedModels,
       });
     } catch (error) {
       res.status(500).json({ error: { message: "Failed to create API key" } });
