@@ -93,6 +93,11 @@ export function recordFailure(provider: string, config: CircuitBreakerConfig): v
   }
 }
 
+/** Resets circuit breaker state for a specific provider. */
+export function resetProvider(provider: string): void {
+  circuitMap.delete(provider);
+}
+
 /** Resets all circuit breaker state. Useful for testing. */
 export function resetAll(): void {
   circuitMap.clear();
