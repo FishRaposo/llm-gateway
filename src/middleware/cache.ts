@@ -75,11 +75,11 @@ export async function storeInCache(
 }
 
 /**
- * Generates a SHA-256 hex digest of a string, truncated to 16 hex chars (64 bits)
- * for practical uniqueness while keeping keys reasonably short.
+ * Generates a SHA-256 hex digest of a string, truncated to 32 hex characters (128 bits)
+ * for collision-resistant cache keys while keeping keys reasonably short.
  * @param str - String to hash.
  * @returns Hex hash string.
  */
 function hashString(str: string): string {
-  return createHash("sha256").update(str).digest("hex").slice(0, 16);
+  return createHash("sha256").update(str).digest("hex").slice(0, 32);
 }
