@@ -84,7 +84,7 @@ export class NewProvider extends BaseProvider {
 }
 ```
 
-2. **Register the provider** in `src/providers/base.ts` — add a `case` to the `switch` in `getProvider()`.
+2. **Register the provider** in `src/providers/registry.ts` — add a `case` to the `switch` in `getProvider()`.
 3. **Add to TypeScript types** — update the provider `type` union in `src/types/index.ts` if adding a new type literal.
 4. **Configure in `.env`** — add environment variables for the provider's API key and optional base URL.
 5. **Add tests** — create tests in `tests/` using the mock provider pattern.

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { Router } from "../src/routing/router";
 import { evaluateRules } from "../src/routing/rules";
 import type { RoutingRule } from "../src/types";
-import type { RequestContext, RoutingDecision } from "../src/types/routing";
+import type { RequestContext } from "../src/types/routing";
 
 const baseContext: RequestContext = {
   requestId: "test-1",

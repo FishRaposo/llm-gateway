@@ -292,6 +292,7 @@ export class ProcessChatCompletion {
         provider: providerName,
       };
     } catch (error) {
+      console.error(`[ProcessChatCompletion] Provider ${providerName} failed:`, error);
       this.deps.circuitBreaker.recordFailure(providerName, this.deps.circuitBreakerConfig);
       return undefined;
     }

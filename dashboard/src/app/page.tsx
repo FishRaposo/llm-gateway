@@ -8,11 +8,11 @@ interface AuditLog {
   timestamp: string;
   model: string;
   provider: string;
-  cost_usd: number;
-  latency_ms: number;
+  costUsd: number;
+  latencyMs: number;
   status: string;
-  fallback_used: number;
-  routing_decision?: string;
+  fallbackUsed: boolean;
+  routingDecision?: string;
 }
 
 interface BudgetInfo {
@@ -136,12 +136,12 @@ export default function DashboardPage() {
   const loading = !logsData && !logsError;
   const error = logsError || budgetsError || healthError;
 
-  const totalCost = logs.reduce((sum, d) => sum + (d.cost_usd || 0), 0);
-  const avgLatency = logs.length > 0 ? Math.round(logs.reduce((sum, d) => sum + (d.latency_ms || 0), 0) / logs.length) : 0;
+  const totalCost = logs.reduce((sum, d) => sum + (d.costUsd || 0), 0);
+  const avgLatency = logs.length > 0 ? Math.round(logs.reduce((sum, d) => sum + (d.latencyMs || 0), 0) / logs.length) : 0;
   const blockedCount = logs.filter((g) => g.status === "policy_denied" || g.status === "budget_exceeded").length;
 
   // Render visual telemetry charts
-  const latencyPoints = logs.slice(0, 15).reverse().map((log) => log.latency_ms);
+  const latencyPoints = logs.slice(0, 15).reverse().map((log) => log.latencyMs);
   const chartHeight = 80;
   const chartWidth = 520;
   const maxLatency = latencyPoints.length > 0 ? Math.max(...latencyPoints, 500) : 1000;
@@ -373,10 +373,10 @@ export default function DashboardPage() {
                           </span>
                         </td>
                         <td style={{ padding: "14px 16px", fontWeight: 600, color: "#10b981" }}>
-                          ${(d.cost_usd || 0).toFixed(4)}
+                          ${(d.costUsd || 0).toFixed(4)}
                         </td>
-                        <td style={{ padding: "14px 16px", color: d.latency_ms > 1000 ? "#ec4899" : "#fff", fontWeight: 600 }}>
-                          {d.latency_ms}ms
+                        <td style={{ padding: "14px 16px", color: d.latencyMs > 1000 ? "#ec4899" : "#fff", fontWeight: 600 }}>
+                          {d.latencyMs}ms
                         </td>
                       </tr>
                     );

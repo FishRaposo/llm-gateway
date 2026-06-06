@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect } from "vitest";
 import { parseRequest, buildProviderRequest, parseProviderResponse } from "../src/proxy/request";
 import type { RoutingDecision } from "../src/types/routing";

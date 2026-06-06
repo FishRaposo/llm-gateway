@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { handleStreamingRequest } from "../src/proxy/streaming";
 import type { RequestContext } from "../src/types/routing";

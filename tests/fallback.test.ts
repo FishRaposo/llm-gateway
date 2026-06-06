@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { describe, it, expect, beforeEach } from "vitest";
 import { resetCircuitBreakers } from "../src/routing/fallback";
 import { resetAll, getCircuitState } from "../src/routing/circuitBreaker";
 import { clearProviderRegistry } from "../src/providers/registry";

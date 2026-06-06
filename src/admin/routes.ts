@@ -39,6 +39,7 @@ export function createAdminRouter(storage: AdminStorage, config: GatewayConfig):
       const stats = await getUsageStats(storage.auditLog);
       res.json(stats);
     } catch (error) {
+      console.error("[Admin API] Failed to get usage stats:", error);
       res.status(500).json({ error: { message: "Failed to get usage stats" } });
     }
   });
@@ -60,6 +61,7 @@ export function createAdminRouter(storage: AdminStorage, config: GatewayConfig):
       }
       res.json({ budgets });
     } catch (error) {
+      console.error("[Admin API] Failed to get budgets:", error);
       res.status(500).json({ error: { message: "Failed to get budgets" } });
     }
   });
@@ -79,6 +81,7 @@ export function createAdminRouter(storage: AdminStorage, config: GatewayConfig):
       const logs = await storage.auditLog.query(filters);
       res.json({ logs });
     } catch (error) {
+      console.error("[Admin API] Failed to query logs:", error);
       res.status(500).json({ error: { message: "Failed to query logs" } });
     }
   });
@@ -99,6 +102,7 @@ export function createAdminRouter(storage: AdminStorage, config: GatewayConfig):
         allowedModels: created.allowedModels,
       });
     } catch (error) {
+      console.error("[Admin API] Failed to create API key:", error);
       res.status(500).json({ error: { message: "Failed to create API key" } });
     }
   });
@@ -132,6 +136,7 @@ export function createAdminRouter(storage: AdminStorage, config: GatewayConfig):
         uptimeSeconds: process.uptime(),
       });
     } catch (error) {
+      console.error("[Admin API] Health check failed:", error);
       res.status(500).json({
         status: "unhealthy",
         providers: {},

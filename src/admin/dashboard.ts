@@ -15,7 +15,7 @@ export async function getUsageStats(auditLog: AuditLogStorage): Promise<UsageSta
   const byModel: Record<string, { requests: number; tokens: number; cost: number }> = {};
   const byProvider: Record<string, { requests: number; errors: number }> = {};
 
-  let totalRequests = entries.length;
+  const totalRequests = entries.length;
   let totalTokens = 0;
   let totalCostUsd = 0;
 
