@@ -24,6 +24,7 @@ export function createAuthMiddleware(config: GatewayConfig, store: ApiKeyStore):
     // Bootstrap admin key (no bcrypt for hardcoded admin key — store it if not present)
     if (context.apiKey === config.gatewayApiKey) {
       context.apiKeyName = "admin";
+      context.apiKeyId = "admin";
       context.permissions = ["*"];
       return context;
     }
@@ -35,6 +36,7 @@ export function createAuthMiddleware(config: GatewayConfig, store: ApiKeyStore):
     }
 
     context.apiKeyName = result.record.name;
+    context.apiKeyId = result.record.id;
     context.permissions = result.record.permissions;
     return context;
   };

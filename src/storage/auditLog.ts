@@ -1,6 +1,7 @@
 /** Audit log storage using SQLite for persistent request/response logging. */
 
 import type { AuditEntry, LogFilters } from "../types";
+import { maskApiKey } from "../middleware/auth";
 
 export class AuditLogStorage {
   private dbPath: string;
@@ -57,6 +58,10 @@ export class AuditLogStorage {
   async write(entry: AuditEntry): Promise<void> {
     await this.initialize();
 
+    // Never persist the raw API key — store only a masked form so neither the
+    // SQLite table nor GET /admin/logs can leak a cross-tenant secret.
+    const safeEntry: AuditEntry = { ...entry, apiKey: maskApiKey(entry.apiKey) };
+
     if (this.db) {
       const stmt = this.db.prepare(`
         INSERT INTO audit_log (id, timestamp, api_key, api_key_name, model, provider,
@@ -65,24 +70,24 @@ export class AuditLogStorage {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       stmt.run(
-        entry.id,
-        entry.timestamp,
-        entry.apiKey,
-        entry.apiKeyName,
-        entry.model,
-        entry.provider,
-        entry.inputTokens,
-        entry.outputTokens,
-        entry.costUsd,
-        entry.latencyMs,
-        entry.status,
-        entry.errorMessage ?? null,
-        entry.routingDecision ?? null,
-        entry.cacheHit ? 1 : 0,
-        entry.fallbackUsed ? 1 : 0
+        safeEntry.id,
+        safeEntry.timestamp,
+        safeEntry.apiKey,
+        safeEntry.apiKeyName,
+        safeEntry.model,
+        safeEntry.provider,
+        safeEntry.inputTokens,
+        safeEntry.outputTokens,
+        safeEntry.costUsd,
+        safeEntry.latencyMs,
+        safeEntry.status,
+        safeEntry.errorMessage ?? null,
+        safeEntry.routingDecision ?? null,
+        safeEntry.cacheHit ? 1 : 0,
+        safeEntry.fallbackUsed ? 1 : 0
       );
     } else {
-      console.log("[AuditLog]", JSON.stringify(entry));
+      console.log("[AuditLog]", JSON.stringify(safeEntry));
     }
   }
 

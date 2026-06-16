@@ -32,7 +32,11 @@ export function createBudgetMiddleware(config: GatewayConfig, budgetTracker: Bud
       throw error;
     }
 
-    const remaining = await budgetTracker.getRemainingBudget(context.apiKey);
+    // Per-key budget is tracked under the stable record id (set at key
+    // creation), not the plaintext key. Fall back to the plaintext key only
+    // when no id is available (e.g. bootstrap admin key).
+    const budgetId = context.apiKeyId ?? context.apiKey;
+    const remaining = await budgetTracker.getRemainingBudget(budgetId);
 
     if (remaining < estimatedCost) {
       const error = new Error(

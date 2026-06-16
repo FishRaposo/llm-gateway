@@ -130,6 +130,50 @@ describe("Fallback Handler", () => {
     ).rejects.toThrow("All fallback providers failed");
   });
 
+  it("should fail over to the next provider when a Gemini/Ollama-style error has no retryable flag", async () => {
+    // Regression for the fallback bug: Gemini/Ollama previously threw errors
+    // whose `retryable` field was undefined, so handleFallback short-circuited
+    // and never tried an alternative. A Gemini primary that cannot reach its
+    // (unroutable) endpoint must now fail over to the mock alternative.
+    const { handleFallback } = await import("../src/routing/fallback");
+    const context = {
+      requestId: "test",
+      apiKey: "key",
+      apiKeyName: "test",
+      originalModel: "gemini-1.5-pro",
+      messages: [{ role: "user" as const, content: "hi" }],
+      stream: false,
+      metadata: {},
+      timestamp: new Date().toISOString(),
+    };
+    const decision = {
+      selectedProvider: "gemini",
+      selectedModel: "gemini-1.5-pro",
+      fallbackUsed: false,
+      ruleMatched: "default",
+      alternatives: [{ provider: "mock", model: "mock-model", priority: 1 }],
+    };
+    const config = {
+      routing: {
+        default: { provider: "gemini", model: "gemini-1.5-pro" },
+        rules: [],
+        fallback: { enabled: true, maxRetries: 3, circuitBreaker: { failureThreshold: 5, resetTimeoutMs: 60000 } },
+      },
+      providers: {
+        gemini: { type: "gemini", apiKey: "x", baseUrl: "http://127.0.0.1:0" },
+        mock: { type: "mock", apiKey: "x" },
+      },
+    } as any;
+
+    // The original Gemini call rejects with a plain network error (no
+    // retryable field). Fallback should still kick in and the mock provider
+    // should answer.
+    const geminiError = new Error("Gemini network failure");
+    const response = await handleFallback(context, geminiError, decision, config);
+    expect(response.provider).toBe("mock");
+    expect(response.choices[0].message.content).toContain("mock");
+  });
+
   it("should skip fallback for non-retryable errors", async () => {
     const { handleFallback } = await import("../src/routing/fallback");
     const context = {

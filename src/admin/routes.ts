@@ -7,7 +7,7 @@ import type { CacheStore } from "../storage/cacheStore";
 import type { BudgetTracker } from "../storage/budgetTracker";
 import type { ApiKeyStore } from "../storage/apiKeyStore";
 import { getUsageStats, getProviderHealth } from "./dashboard";
-import { validateApiKey, listApiKeys, registerApiKey, maskApiKey } from "../middleware/auth";
+import { listApiKeys, registerApiKey, maskApiKey } from "../middleware/auth";
 
 export interface AdminStorage {
   auditLog: AuditLogStorage;
@@ -27,8 +27,28 @@ export function createAdminRouter(storage: AdminStorage, config: GatewayConfig):
 
   router.use(async (req, _res, next) => {
     const apiKey = req.headers.authorization?.replace("Bearer ", "");
-    if (!apiKey || !(await validateApiKey(storage.apiKeyStore, apiKey))) {
+    if (!apiKey) {
       _res.status(401).json({ error: { message: "Unauthorized", code: "unauthorized" } });
+      return;
+    }
+
+    // Bootstrap admin key (mirrors auth.ts): the configured gateway key is the
+    // built-in admin identity.
+    if (apiKey === config.gatewayApiKey) {
+      next();
+      return;
+    }
+
+    // Store keys must authenticate AND carry the admin ('*') permission.
+    // A valid-but-non-admin tenant key is authenticated (401 cleared) but
+    // not authorized for /admin/* (403) — prevents privilege escalation.
+    const result = await storage.apiKeyStore.validate(apiKey);
+    if (!result.valid || !result.record) {
+      _res.status(401).json({ error: { message: "Unauthorized", code: "unauthorized" } });
+      return;
+    }
+    if (!result.record.permissions.includes("*")) {
+      _res.status(403).json({ error: { message: "Forbidden: admin permission required", code: "forbidden" } });
       return;
     }
     next();
@@ -94,6 +114,10 @@ export function createAdminRouter(storage: AdminStorage, config: GatewayConfig):
         budgetUsd: budget_usd || config.budgets.defaultKeyBudgetUsd,
         allowedModels: allowed_models || ["*"],
       });
+
+      // Initialize the budget limit under the stable record id so that
+      // getRemainingBudget/getBudgetStatus enforce/report against it.
+      await storage.budgetTracker.setBudget(created.id, created.budgetUsd);
 
       res.json({
         apiKey: created.apiKey,

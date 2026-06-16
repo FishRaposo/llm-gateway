@@ -27,8 +27,13 @@ export async function handleFallback(
     throw error;
   }
 
-  const providerError = error as unknown as ProviderError;
-  if (providerError && !providerError.retryable) {
+  // Only short-circuit when the provider explicitly marks the error as
+  // non-retryable. Providers that throw a plain Error (no `retryable` field)
+  // leave it `undefined`; treating that as non-retryable would silently
+  // disable fallback for Gemini/Ollama/Mock, defeating the reliability
+  // feature. A missing flag therefore falls through to the fallback chain.
+  const providerError = error as unknown as Partial<ProviderError>;
+  if (providerError && providerError.retryable === false) {
     throw error;
   }
 

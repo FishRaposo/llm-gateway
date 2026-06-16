@@ -30,11 +30,17 @@ export function createPolicyMiddleware(config: GatewayConfig): MiddlewareFunctio
       throw error;
     }
 
-    // Apply sanitization if guardrails modified the prompt
+    // Apply sanitization per-message. The combined-content pass above is only
+    // used for the allow/deny decision; re-running guardrails on each message
+    // ensures a sanitized blob is written back to the message it came from,
+    // rather than overwriting every message with one joined+sanitized string.
     if (guardrails.sanitized) {
       for (const msg of context.messages) {
         if (typeof msg.content === "string") {
-          msg.content = guardrails.sanitized;
+          const perMessage = evaluateGuardrails(msg.content);
+          if (perMessage.sanitized) {
+            msg.content = perMessage.sanitized;
+          }
         }
       }
     }

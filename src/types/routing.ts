@@ -4,6 +4,8 @@ export interface RequestContext {
   requestId: string;
   apiKey: string;
   apiKeyName: string;
+  /** Stable record id used as the budget identifier (deduct/read/limit). */
+  apiKeyId?: string;
   permissions: string[];
   originalModel: string;
   messages: ChatMessage[];

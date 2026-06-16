@@ -18,6 +18,20 @@ make demo
 
 Starts Redis, the gateway, and provides a sample curl command to test the proxy at http://localhost:3000
 
+### Admin dashboard (optional)
+
+A Next.js admin console lives in `dashboard/`. It shows live audit logs, budgets, latency, and
+provider health. It also has a **demo mode**: when the gateway backend is unreachable it renders
+deterministic sample data behind a visible banner, so the UI is presentable with no backend.
+
+```bash
+cd dashboard
+npm install
+NEXT_PUBLIC_DEMO_MODE=true npm run dev   # http://localhost:3001 — no backend needed
+# or, against a running gateway:
+NEXT_PUBLIC_GATEWAY_URL=http://localhost:3000 npm run dev
+```
+
 ---
 
 ## 1. What This Is
@@ -140,18 +154,32 @@ curl -X POST http://localhost:3000/v1/chat/completions \
 
 ## 9. Testing Strategy
 
+The backend suite has **150 vitest tests** across 19 files; the optional dashboard has **27**
+component/unit tests across 3 files. Run `npx vitest run` at the repo root and
+`cd dashboard && npx vitest run` for the UI.
+
 ```
 tests/
-├── routing.test.ts      # Rule evaluation, priority sorting, default fallback
-├── fallback.test.ts     # Provider fallback chains, circuit breaker, retry limits
-├── cache.test.ts        # Cache hits, misses, TTL expiry, key generation
-├── budget.test.ts       # Budget tracking, limit enforcement, alerting
-└── proxy.test.ts        # Full request pipeline, error handling, streaming
+├── routing.test.ts          # Rule evaluation, priority sorting, default fallback
+├── fallback.test.ts         # Provider fallback chains, circuit breaker, retry limits
+├── cache.test.ts            # Cache hits, misses, TTL expiry, key generation
+├── budget.test.ts           # Budget tracking, limit enforcement, alerting
+├── proxy.test.ts            # Full request pipeline, error handling, streaming
+├── rateLimit.test.ts        # Sliding-window limiting, per-key config, 429 path
+├── logging.test.ts          # Structured audit logging + API-key redaction
+├── pricing.test.ts          # Pricing parity with shared_core.pricing (golden-gated)
+├── costService.test.ts      # Cost calc + model-pricing normalization
+└── monitorAlignment.test.ts # Audit + Prometheus key parity with the Python monitor
 ```
 
-- **Unit tests**: Each middleware and service tested in isolation with mocks
-- **Integration tests**: Full pipeline with mock provider (no real API calls)
-- **Error path tests**: Provider failures, budget exceeded, policy denied
+- **Unit tests**: each middleware and service tested in isolation with mocks.
+- **Integration tests**: full pipeline with the mock provider (no real API calls).
+- **Error path tests**: provider failures, budget exceeded, policy denied, rate limited.
+- **Golden-output tests**: pricing/cost values are pinned so refactors can't silently move them.
+- **Cross-language tests**: pin the pricing rates, audit cost-record columns, and Prometheus
+  key names shared with `shared_core.pricing` and the Python `llm-cost-latency-monitor`.
+- **Dashboard tests** (`dashboard/`): pure data helpers, the `ErrorBoundary`, and the
+  console in demo / live / empty states.
 
 ## 10. Deployment Notes
 

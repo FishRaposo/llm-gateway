@@ -130,7 +130,8 @@ export async function handleRequest(
       providerResponse.usage.completionTokens
     );
 
-    await storage.budgetTracker.deductBudget(context.apiKey, cost).catch(() => {});
+    // Deduct under the same identifier the budget was set/read by (record id).
+    await storage.budgetTracker.deductBudget(context.apiKeyId ?? context.apiKey, cost).catch(() => {});
 
     const cacheKey = generateCacheKey(context);
     await storage.cacheStore.set(cacheKey, { response: providerResponse as unknown as Record<string, unknown>, timestamp: Date.now() }).catch(() => {});

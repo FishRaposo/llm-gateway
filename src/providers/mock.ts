@@ -2,6 +2,7 @@
 
 import { BaseProvider } from "./base";
 import type { ProviderRequest, ProviderResponse, ModelInfo, ProviderHealth } from "../types/provider";
+import { GatewayProviderError } from "./errors";
 import { v4 as uuidv4 } from "uuid";
 
 export interface MockProviderConfig {
@@ -34,13 +35,13 @@ export class MockProvider extends BaseProvider {
     await this.simulateLatency();
 
     if (Math.random() < this.mockConfig.errorRate) {
-      throw {
-        type: "server_error" as const,
-        code: 500,
-        message: "Mock provider simulated error",
-        retryable: true,
-        provider: "mock",
-      };
+      throw new GatewayProviderError(
+        "server_error",
+        500,
+        "Mock provider simulated error",
+        true,
+        "mock"
+      );
     }
 
     return {

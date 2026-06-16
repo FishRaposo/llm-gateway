@@ -3,6 +3,7 @@
 import { BaseProvider } from "./base";
 import type { ProviderRequest, ProviderResponse, ModelInfo, ProviderHealth } from "../types/provider";
 import { getModelInfo as getSharedModelInfo } from "../shared/pricing";
+import { providerErrorFromStatus } from "./errors";
 import { v4 as uuidv4 } from "uuid";
 
 export class OllamaProvider extends BaseProvider {
@@ -30,7 +31,7 @@ export class OllamaProvider extends BaseProvider {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`Ollama API error ${response.status}: ${text}`);
+      throw providerErrorFromStatus(response.status, `Ollama API error ${response.status}: ${text}`, "ollama");
     }
 
     const data = await response.json() as Record<string, unknown>;
@@ -61,7 +62,7 @@ export class OllamaProvider extends BaseProvider {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`Ollama streaming error ${response.status}: ${text}`);
+      throw providerErrorFromStatus(response.status, `Ollama streaming error ${response.status}: ${text}`, "ollama");
     }
 
     const reader = response.body?.getReader();
