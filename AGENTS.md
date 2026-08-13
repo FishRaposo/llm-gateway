@@ -74,7 +74,7 @@ spec.
   procedure documented and parity-tested.
 - ⏭️ `claude-3-5-haiku` rate diverges from shared_core (1.0/5.0 vs 0.8/4.0); deferred because
   changing it would move existing cost outputs (golden-gated). Pinned + tracked in roadmap.md.
-- Decide whether this standalone gateway or `knowledgeops/services/llm-gateway` is canonical.
+- ✅ Canonical-gateway question settled 2026-08-12: `knowledgeops` (incl. `services/llm-gateway`) was consolidated into groundtruth and archived on GitHub — this standalone gateway is the canonical one.
 
 ## When to Update This AGENTS.md
 
