@@ -14,27 +14,34 @@ flowchart LR
 - ✅ `<prefix>_redis` / `<prefix>` container naming (`llm_gateway`, `llm_gateway_redis`).
 - ✅ `tsc --noEmit` clean; backend **vitest suite expanded 106 → 150** (pricing parity,
   CostService, rate-limit/logging middleware, metrics + monitor-alignment).
-- ✅ **Pricing parity module:** `shared/pricing.ts` mirrors `shared_core.pricing` per-1M rates
-  as `MODEL_PRICING_PER_1M` (single source of truth, sync documented); `tests/pricing.test.ts`
-  pins the shared values and fails on drift.
+- ✅ **Pricing parity module:** `shared/pricing.ts` mirrored `shared_core.pricing` per-1M
+  rates as `MODEL_PRICING_PER_1M`; with upstream archived (2026-08-13) the table is now
+  **self-owned, frozen at v1.3.0 parity** — `tests/pricing.test.ts` pins the frozen
+  snapshot.
 - ✅ **Schema alignment documented + tested:** audit-log snake_case columns are a superset of
   the Python monitor's `LLMCall` cost-record; `llm_gateway_cost_usd_total{provider,model}`
   pinned by `tests/monitorAlignment.test.ts`.
 - ✅ **Dashboard polished:** demo-mode fallback + banner, `ErrorBoundary`, extracted testable
   data helpers, 27 vitest component tests, an optional Playwright smoke spec, green `next build`.
 
-## Next — cross-language alignment with llm-cost-latency-monitor (ticket-only)
+## Next — cross-language alignment (ticket-only)
+
+Upstream `operator-shared-core` was archived 2026-08-13 and `llm-cost-latency-monitor` was
+consolidated into agenttrace, so these are now **self-owned decisions**, not sync work:
+
 - Reconcile the **`claude-3-5-haiku` divergence**: the gateway's dated id uses 1.00 / 5.00 per
-  1M while `shared_core` lists 0.80 / 4.00. This is golden-output-gated (changing it moves
-  existing cost/budget numbers), so it is deferred and pinned by a test rather than silently
-  changed. Reconcile by either updating shared_core, re-mapping the gateway id, or accepting
-  the divergence formally.
-- Add the gateway's gemini rates to `shared_core` (or document them as gateway-only) so the two
-  registries fully overlap.
-- Stand up a single Grafana dashboard that reads both the gateway's `llm_gateway_*` metrics and
-  the monitor's metrics, proving the key-name alignment end-to-end.
-- Decide whether this standalone gateway or `knowledgeops/services/llm-gateway` is canonical
-  (and retire/redirect the other).
+  1M while the frozen shared-core v1.3.0 snapshot lists 0.80 / 4.00. This is
+  golden-output-gated (changing it moves existing cost/budget numbers), so it is deferred
+  and pinned by a test rather than silently changed. Reconcile by either re-mapping the
+  gateway id or accepting the divergence formally.
+- The gateway's gemini rates are gateway-only by default now — document them as such, or
+  adopt them into the frozen snapshot if a second consumer ever appears.
+- Stand up a single Grafana dashboard that reads both the gateway's `llm_gateway_*` metrics
+  and the monitor's metrics, proving the key-name alignment end-to-end.
+
+Settled, no longer open: the canonical-gateway question was resolved 2026-08-12 —
+`knowledgeops` (incl. `services/llm-gateway`) was consolidated into groundtruth and
+archived; this standalone gateway is the canonical one.
 
 ## Later
 - Provide a `better-sqlite3` build path or a prebuilt binary so audit persistence works

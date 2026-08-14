@@ -22,7 +22,7 @@ flowchart LR
 |---|---|---|
 | Typecheck (backend) | `npx tsc --noEmit` | clean |
 | Lint | `npx eslint .` | clean (0 errors) |
-| Backend tests | `npx vitest run` | **150 passing**, 19 files |
+| Backend tests | `npx vitest run` | **149 passing**, 20 files |
 | Dashboard typecheck | `cd dashboard && npx tsc --noEmit` | clean |
 | Dashboard tests | `cd dashboard && npx vitest run` | **27 passing**, 3 files |
 | Dashboard build | `cd dashboard && npx next build` | success |
@@ -52,7 +52,7 @@ graph TD
 
 | Item | Status | Notes |
 |---|---|---|
-| Pricing module mirroring `shared_core.pricing` | ✅ adopted | `MODEL_PRICING_PER_1M`, sync documented, parity test |
+| Pricing module mirroring `shared_core.pricing` | ✅ adopted | `MODEL_PRICING_PER_1M`, lineage frozen at archived v1.3.0, parity test pins the snapshot |
 | Audit-log + Prometheus key alignment | ✅ documented + tested | superset of monitor `LLMCall`; `tests/monitorAlignment.test.ts` |
 | `claude-3-5-haiku` rate reconciliation | ⏭️ deferred | would change existing cost output; golden-gated, pinned, tracked in roadmap |
 | Adopt `shared_core` code | ❌ N/A | Python lib; TS peer stays standalone by design |

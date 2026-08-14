@@ -42,7 +42,7 @@ llm-gateway/
 make install      # npm ci
 make dev          # tsx watch src/index.ts
 make build        # tsc -> dist/
-make test         # vitest run  -> 150 passing (backend); dashboard has 27 more
+make test         # vitest run  -> 149 passing (backend); dashboard has 27 more
 make lint         # tsc --noEmit + eslint
 make typecheck    # tsc --noEmit
 make docker-up    # redis + gateway
@@ -51,17 +51,17 @@ make demo         # build + print a sample OpenAI-compatible request
 
 ## Current State
 
-**Functional, migrated, green, hardened.** `tsc --noEmit` clean; **150 backend vitest tests
-pass** (19 files), plus **27 dashboard tests** (3 files); `eslint .` clean; `next build` green.
+**Functional, migrated, green, hardened.** `tsc --noEmit` clean; **149 backend vitest tests
+pass** (20 files), plus **27 dashboard tests** (3 files); `eslint .` clean; `next build` green.
 Storage degrades gracefully: when the native `better-sqlite3` binding is unavailable (e.g. no
 C++ build tools), the API-key/audit stores fall back to in-memory — the full test suite runs
 without compilation.
 
 The root vitest suite is scoped to `tests/` via `vitest.config.ts`; the dashboard has its own
-jsdom vitest project under `dashboard/`. `src/shared/pricing.ts` now mirrors
-`shared_core.pricing` per-1M rates (`MODEL_PRICING_PER_1M`, single source of truth, sync
-documented in its header) and derives the per-token catalog from it; parity is enforced by
-`tests/pricing.test.ts`. The optional Next.js dashboard gained a demo-mode fallback, an
+jsdom vitest project under `dashboard/`. `src/shared/pricing.ts` carries the per-1M
+rates (`MODEL_PRICING_PER_1M`) mirrored from `shared_core.pricing` — the lineage is
+**frozen at the archived shared-core v1.3.0** (2026-08-13), the table is self-owned, and
+the frozen parity snapshot is pinned by `tests/pricing.test.ts`. The optional Next.js dashboard gained a demo-mode fallback, an
 `ErrorBoundary`, extracted testable helpers, component tests, and an optional Playwright smoke
 spec.
 
@@ -70,9 +70,9 @@ spec.
 - ✅ Audit-log column schema and Prometheus label keys (`llm_gateway_*`) documented as a
   superset of the Python `llm-cost-latency-monitor` `LLMCall` cost-record and pinned by
   `tests/monitorAlignment.test.ts` so one dashboard reads both.
-- ✅ Pricing table mirrors `shared_core.pricing` (data parity, `MODEL_PRICING_PER_1M`); sync
-  procedure documented and parity-tested.
-- ⏭️ `claude-3-5-haiku` rate diverges from shared_core (1.0/5.0 vs 0.8/4.0); deferred because
+- ✅ Pricing table mirrors `shared_core.pricing` (data parity, `MODEL_PRICING_PER_1M`) —
+  lineage frozen at the archived v1.3.0; the table is self-owned and parity-tested.
+- ⏭️ `claude-3-5-haiku` rate diverges from the frozen shared-core snapshot (1.0/5.0 vs 0.8/4.0); deferred because
   changing it would move existing cost outputs (golden-gated). Pinned + tracked in roadmap.md.
 - ✅ Canonical-gateway question settled 2026-08-12: `knowledgeops` (incl. `services/llm-gateway`) was consolidated into groundtruth and archived on GitHub — this standalone gateway is the canonical one.
 

@@ -1,32 +1,29 @@
 /**
  * Model pricing catalog and cost calculation.
  *
- * ## Single source of truth: `shared_core.pricing.MODEL_PRICING`
+ * ## Frozen lineage: archived `shared_core.pricing` v1.3.0
  *
- * The canonical per-model token rates for the whole workspace live in the Python
- * package `shared_core.pricing` (see
- * `shared-core/src/shared_core/pricing.py`), expressed as **USD per 1,000,000
- * tokens**. This TypeScript gateway is a *peer* of that package — it cannot
- * import Python, so it mirrors the relevant rates here as **data parity, not
- * code sharing** (as documented in AGENTS.md).
+ * These per-model token rates were mirrored from the Python package
+ * `shared_core.pricing` (`FishRaposo/operator-shared-core`, **archived
+ * 2026-08-13**), expressed as **USD per 1,000,000 tokens**. With the upstream
+ * archived there is no live sync: `MODEL_PRICING_PER_1M` below is **self-owned**
+ * by this gateway, frozen at parity with shared-core v1.3.0.
  *
- * `MODEL_PRICING_PER_1M` below is the mirror of the shared registry: it pins the
- * per-1M rates so a parity test (`tests/pricing.test.ts`) can assert they stay in
- * sync with `shared_core`. The per-token `MODEL_CATALOG` used by the running
- * gateway is *derived* from this table via `perToken()`, so there is exactly one
- * place to edit when the upstream rates change.
+ * The per-token `MODEL_CATALOG` used by the running gateway is *derived* from
+ * this table via `perToken()`, so there is exactly one place to edit rates.
  *
- * ### Sync procedure
- * When `shared_core.pricing.MODEL_PRICING` changes, update the matching entry in
- * `MODEL_PRICING_PER_1M` and re-run `npx vitest run tests/pricing.test.ts`. The
- * parity test enumerates the models the two registries share and fails on drift.
+ * ### Changing rates
+ * Edit `MODEL_PRICING_PER_1M` directly and re-run
+ * `npx vitest run tests/pricing.test.ts`. The parity test pins the frozen
+ * v1.3.0 snapshot as the historical cross-language contract; a deliberate rate
+ * change updates the pinned snapshot in the same commit.
  *
- * ### Known intentional divergences (tracked as follow-ups, see docs/roadmap.md)
- * - `claude-3-5-haiku`: shared_core lists 0.80 / 4.00 per 1M. The gateway's dated
- *   id `claude-3-5-haiku-20241022` historically uses 1.00 / 5.00. Changing it
- *   would alter existing cost/budget outputs, so it is left as-is and excluded
- *   from the strict parity assertion; reconciling the two is a roadmap item.
- * - `gemini-*` models are gateway-only (not present in `shared_core`).
+ * ### Known intentional divergences (see docs/roadmap.md)
+ * - `claude-3-5-haiku`: the frozen shared-core snapshot lists 0.80 / 4.00 per
+ *   1M. The gateway's dated id `claude-3-5-haiku-20241022` historically uses
+ *   1.00 / 5.00. Changing it would alter existing cost/budget outputs, so it
+ *   is left as-is and excluded from the strict parity assertion.
+ * - `gemini-*` models are gateway-only (never present in `shared_core`).
  */
 
 import type { ModelPricing, ModelInfo } from "../types/provider";

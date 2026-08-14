@@ -28,7 +28,7 @@ subsequent comprehensive-bar hardening. Domain docs: [../ARCHITECTURE.md](../ARC
 ```mermaid
 flowchart LR
     subgraph Py[Python world]
-        SC[shared_core.pricing<br/>MODEL_PRICING per-1M<br/>SOURCE OF TRUTH]
+        SC[shared_core.pricing v1.3.0<br/>ARCHIVED 2026-08-13<br/>frozen lineage]
         Mon[llm-cost-latency-monitor<br/>LLMCall cost-record]
         SC --> Mon
     end
@@ -44,16 +44,20 @@ flowchart LR
     Mon -. shared dashboard .-> Metrics
 ```
 
-- **Pricing:** `shared_core.pricing.MODEL_PRICING` (USD per 1,000,000 tokens) is the single
-  source of truth. `src/shared/pricing.ts` mirrors it as `MODEL_PRICING_PER_1M`; the running
-  gateway's per-token `MODEL_CATALOG` is *derived* from that table, so there is exactly one
-  place to edit. `tests/pricing.test.ts` pins the shared values and fails on drift.
-- **Sync procedure:** when the Python registry changes, update `MODEL_PRICING_PER_1M` and the
-  pinned golden snapshot in the test, then re-run `npx vitest run tests/pricing.test.ts`.
-- **Known intentional divergence:** `claude-3-5-haiku` is 0.80 / 4.00 in `shared_core` but the
-  gateway's dated id `claude-3-5-haiku-20241022` historically uses 1.00 / 5.00. Changing it
-  would alter existing cost/budget outputs, so it is left as-is, documented, and excluded from
-  the strict parity assertion (tracked in roadmap.md). `gemini-*` models are gateway-only.
+- **Pricing:** the per-1M-token rates were mirrored from `shared_core.pricing.MODEL_PRICING`
+  (USD per 1,000,000 tokens) while that registry was live. Upstream
+  (`FishRaposo/operator-shared-core`) was archived on 2026-08-13, so the lineage is
+  **frozen at v1.3.0**: `src/shared/pricing.ts` now owns `MODEL_PRICING_PER_1M` outright,
+  and the running gateway's per-token `MODEL_CATALOG` is *derived* from that table, so
+  there is exactly one place to edit. `tests/pricing.test.ts` pins the frozen snapshot.
+- **Changing rates:** edit `MODEL_PRICING_PER_1M` and the pinned golden snapshot in the
+  test together, then re-run `npx vitest run tests/pricing.test.ts`. There is no upstream
+  to sync with anymore.
+- **Known intentional divergence:** `claude-3-5-haiku` was 0.80 / 4.00 in the frozen
+  shared-core snapshot but the gateway's dated id `claude-3-5-haiku-20241022` historically
+  uses 1.00 / 5.00. Changing it would alter existing cost/budget outputs, so it is left
+  as-is, documented, and excluded from the strict parity assertion (tracked in
+  roadmap.md). `gemini-*` models are gateway-only.
 
 ## Decision: golden-output gating for any numeric change
 

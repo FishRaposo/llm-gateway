@@ -8,7 +8,9 @@ import {
 import type { AuditEntry } from "../src/types";
 
 /**
- * Cross-language alignment with the Python `llm-cost-latency-monitor`.
+ * Cross-language alignment with the Python `llm-cost-latency-monitor`
+ * (consolidated into agenttrace; original repo archived 2026-08-13 — the key
+ * names pinned here are the frozen contract, not a live sync).
  *
  * The monitor persists each call via the `LLMCall` model
  * (llm-cost-latency-monitor/src/llm_monitor/models.py):

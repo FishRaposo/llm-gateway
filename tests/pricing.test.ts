@@ -9,12 +9,14 @@ import {
 } from "../src/shared/pricing";
 
 /**
- * Golden snapshot of `shared_core.pricing.MODEL_PRICING`
- * (shared-core/src/shared_core/pricing.py), USD per 1,000,000 tokens.
+ * Frozen golden snapshot of `shared_core.pricing.MODEL_PRICING` at v1.3.0
+ * (`FishRaposo/operator-shared-core`, archived 2026-08-13), USD per 1,000,000
+ * tokens.
  *
- * This is pinned here on purpose: it is the cross-language contract. If the
- * Python registry changes, this constant and `MODEL_PRICING_PER_1M` must be
- * updated together — the parity test below fails on any drift for shared keys.
+ * This is pinned here on purpose: it was the cross-language contract while the
+ * upstream registry was live. With the upstream archived, the snapshot is
+ * frozen and the gateway's `MODEL_PRICING_PER_1M` is self-owned — a deliberate
+ * rate change updates this snapshot in the same commit.
  */
 const SHARED_CORE_MODEL_PRICING_PER_1M: Record<string, { inputPer1m: number; outputPer1m: number }> = {
   "gpt-4o": { inputPer1m: 5.0, outputPer1m: 15.0 },

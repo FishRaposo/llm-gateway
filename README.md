@@ -2,7 +2,7 @@
 
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen)]() [![Coverage](https://img.shields.io/badge/coverage-88%25-brightgreen)]() [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript)]() [![Express](https://img.shields.io/badge/Express-000?logo=express)]() [![Redis](https://img.shields.io/badge/Redis-DC382D?logo=redis)]()
 
-**Enterprise LLM proxy with fallback, caching, rate limiting, and budget enforcement.**
+**LLM proxy with routing, guardrails, cost control, and fallback.**
 
 Route requests across multiple providers (OpenAI, Anthropic, Gemini, Ollama) with automatic failover, response caching, and per-API-key cost control.
 
@@ -154,7 +154,7 @@ curl -X POST http://localhost:3000/v1/chat/completions \
 
 ## 9. Testing Strategy
 
-The backend suite has **150 vitest tests** across 19 files; the optional dashboard has **27**
+The backend suite has **149 vitest tests** across 20 files; the optional dashboard has **27**
 component/unit tests across 3 files. Run `npx vitest run` at the repo root and
 `cd dashboard && npx vitest run` for the UI.
 
@@ -167,7 +167,7 @@ tests/
 ├── proxy.test.ts            # Full request pipeline, error handling, streaming
 ├── rateLimit.test.ts        # Sliding-window limiting, per-key config, 429 path
 ├── logging.test.ts          # Structured audit logging + API-key redaction
-├── pricing.test.ts          # Pricing parity with shared_core.pricing (golden-gated)
+├── pricing.test.ts          # Frozen pricing parity snapshot (archived shared_core v1.3.0, golden-gated)
 ├── costService.test.ts      # Cost calc + model-pricing normalization
 └── monitorAlignment.test.ts # Audit + Prometheus key parity with the Python monitor
 ```
@@ -176,8 +176,9 @@ tests/
 - **Integration tests**: full pipeline with the mock provider (no real API calls).
 - **Error path tests**: provider failures, budget exceeded, policy denied, rate limited.
 - **Golden-output tests**: pricing/cost values are pinned so refactors can't silently move them.
-- **Cross-language tests**: pin the pricing rates, audit cost-record columns, and Prometheus
-  key names shared with `shared_core.pricing` and the Python `llm-cost-latency-monitor`.
+- **Cross-language tests**: pin the frozen pricing lineage (archived `shared_core.pricing`
+  v1.3.0) plus the audit cost-record columns and Prometheus key names shared with the
+  Python `llm-cost-latency-monitor` (now consolidated into agenttrace).
 - **Dashboard tests** (`dashboard/`): pure data helpers, the `ErrorBoundary`, and the
   console in demo / live / empty states.
 
