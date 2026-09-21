@@ -18,19 +18,31 @@ make demo
 
 Starts Redis, the gateway, and provides a sample curl command to test the proxy at http://localhost:3000
 
-### Admin dashboard (optional)
+### Portfolio demo (dashboard UI)
 
-A Next.js admin console lives in `dashboard/`. It shows live audit logs, budgets, latency, and
-provider health. It also has a **demo mode**: when the gateway backend is unreachable it renders
-deterministic sample data behind a visible banner, so the UI is presentable with no backend.
+The thesis: **the proxy is the control point** — routing, budgets, guardrails, and audit all
+converge in one place. The optional Next.js dashboard (`dashboard/`) demonstrates that with
+deterministic fixtures and an interactive **Simulate request** panel (provider fallback, budget
+exceeded, guardrail blocked). Each button appends an audit row and updates budgets/health
+consistently — no backend required.
+
+```bash
+make demo-ui          # http://localhost:3001 — forced demo mode
+# equivalent:
+cd dashboard && npm run demo:ui
+```
+
+Against a live gateway:
 
 ```bash
 cd dashboard
 npm install
-NEXT_PUBLIC_DEMO_MODE=true npm run dev   # http://localhost:3001 — no backend needed
-# or, against a running gateway:
 NEXT_PUBLIC_GATEWAY_URL=http://localhost:3000 npm run dev
 ```
+
+When the backend is unreachable the dashboard falls back to sample data automatically (shorter
+outage banner). For portfolio previews, use forced demo mode (`make demo-ui`) which shows
+*Sample data — deterministic gateway fixtures.*
 
 ---
 

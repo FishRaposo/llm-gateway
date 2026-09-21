@@ -1,6 +1,6 @@
 NPM := npm
 
-.PHONY: install dev test lint format typecheck build docker-up docker-down demo \
+.PHONY: install dev test lint format typecheck build docker-up docker-down demo demo-ui \
         benchmark clean setup help
 
 install: ## Install dependencies
@@ -40,6 +40,9 @@ demo: ## Build the gateway and print a sample request
 	@echo "  curl -X POST http://localhost:3000/v1/chat/completions \\"
 	@echo "    -H 'Content-Type: application/json' -H 'Authorization: Bearer demo-key' \\"
 	@echo "    -d '{\"model\": \"mock\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}]}'"
+
+demo-ui: ## Start the dashboard in forced demo mode (no backend)
+	cd dashboard && npm run demo:ui
 
 benchmark: ## Run the benchmark script
 	npx tsx scripts/benchmark.ts

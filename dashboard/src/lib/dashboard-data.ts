@@ -130,3 +130,112 @@ export const DEMO_HEALTH: Record<string, ProviderHealth> = {
   anthropic: { name: "anthropic", status: "healthy", latencyMs: 410, errorRate: 0.0, lastCheck: "2026-06-15T12:00:00Z" },
   gemini: { name: "gemini", status: "degraded", latencyMs: 980, errorRate: 0.12, lastCheck: "2026-06-15T12:00:00Z" },
 };
+
+// --- Interactive demo simulations ------------------------------------------
+
+export type SimulationScenario = "provider_fallback" | "budget_exceeded" | "guardrail_blocked";
+
+/** Human-readable labels for the simulate-request panel. */
+export const SIMULATION_LABELS: Record<SimulationScenario, string> = {
+  provider_fallback: "Provider fallback",
+  budget_exceeded: "Budget exceeded",
+  guardrail_blocked: "Guardrail blocked",
+};
+
+/**
+ * Build a new audit-log row for one of the three portfolio demo scenarios.
+ * `index` keeps ids deterministic within a session.
+ */
+export function createSimulatedLog(scenario: SimulationScenario, index: number): AuditLog {
+  const id = `sim-${scenario}-${index}`;
+  const timestamp = new Date().toISOString();
+
+  switch (scenario) {
+    case "provider_fallback":
+      return {
+        id,
+        timestamp,
+        model: "gpt-4o",
+        provider: "anthropic",
+        costUsd: 0.0156,
+        latencyMs: 890,
+        status: "success",
+        fallbackUsed: true,
+        routingDecision: "fallback_chain",
+      };
+    case "budget_exceeded":
+      return {
+        id,
+        timestamp,
+        model: "gpt-4o",
+        provider: "openai",
+        costUsd: 0,
+        latencyMs: 45,
+        status: "budget_exceeded",
+        fallbackUsed: false,
+        routingDecision: "cost_optimize",
+      };
+    case "guardrail_blocked":
+      return {
+        id,
+        timestamp,
+        model: "gpt-4o-mini",
+        provider: "openai",
+        costUsd: 0,
+        latencyMs: 38,
+        status: "policy_denied",
+        fallbackUsed: false,
+        routingDecision: "model_preference",
+      };
+  }
+}
+
+/** Apply budget-side effects that match the simulated gateway decision. */
+export function applyBudgetSimulation(
+  budgets: BudgetInfo[],
+  scenario: SimulationScenario,
+  log: AuditLog
+): BudgetInfo[] {
+  if (scenario === "provider_fallback" && log.costUsd > 0) {
+    return budgets.map((b) => {
+      if (b.key !== "team-prod") return b;
+      const usedUsd = b.usedUsd + log.costUsd;
+      return {
+        ...b,
+        usedUsd,
+        remainingUsd: Math.max(0, b.limitUsd - usedUsd),
+      };
+    });
+  }
+
+  if (scenario === "budget_exceeded") {
+    return budgets.map((b) => {
+      if (b.key !== "team-prod") return b;
+      return { ...b, usedUsd: b.limitUsd, remainingUsd: 0 };
+    });
+  }
+
+  return budgets;
+}
+
+/** Apply provider-health deltas for scenarios that affect routing. */
+export function applyHealthSimulation(
+  health: Record<string, ProviderHealth>,
+  scenario: SimulationScenario
+): Record<string, ProviderHealth> {
+  if (scenario !== "provider_fallback") return health;
+
+  const openai = health.openai;
+  if (!openai) return health;
+
+  return {
+    ...health,
+    openai: {
+      ...openai,
+      status: "degraded",
+      errorRate: Math.min(openai.errorRate + 0.05, 1),
+      latencyMs: openai.latencyMs + 120,
+      lastCheck: new Date().toISOString(),
+    },
+  };
+}

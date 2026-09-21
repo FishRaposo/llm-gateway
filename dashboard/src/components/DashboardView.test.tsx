@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 
 // Mock SWR so we control the data/error each test sees without real network.
 const swrMock = vi.fn();
@@ -32,10 +32,28 @@ describe("DashboardView", () => {
       );
     });
 
-    it("renders a visible demo banner", () => {
+    it("renders a shorter outage banner when the backend is unreachable", () => {
       render(<DashboardView />);
-      expect(screen.getByTestId("demo-banner")).toBeInTheDocument();
-      expect(screen.getByText(/DEMO MODE/)).toBeInTheDocument();
+      const banner = screen.getByTestId("demo-banner");
+      expect(banner).toBeInTheDocument();
+      expect(banner).toHaveAttribute("data-force-demo", "false");
+      expect(screen.getByText(/Gateway unreachable/)).toBeInTheDocument();
+    });
+
+    it("renders the simulate-request panel with three scenario buttons", () => {
+      render(<DashboardView />);
+      expect(screen.getByTestId("simulate-request-panel")).toBeInTheDocument();
+      expect(screen.getByTestId("simulate-provider_fallback")).toBeInTheDocument();
+      expect(screen.getByTestId("simulate-budget_exceeded")).toBeInTheDocument();
+      expect(screen.getByTestId("simulate-guardrail_blocked")).toBeInTheDocument();
+    });
+
+    it("appends a simulated row to the audit log when a scenario is clicked", () => {
+      render(<DashboardView />);
+      const initialRows = screen.getAllByRole("row").length;
+      fireEvent.click(screen.getByTestId("simulate-guardrail_blocked"));
+      expect(screen.getAllByRole("row").length).toBe(initialRows + 1);
+      expect(screen.getAllByText("POLICY_DENIED").length).toBeGreaterThan(0);
     });
 
     it("shows the DEMO status pill instead of LIVE TAIL", () => {
@@ -79,7 +97,57 @@ describe("DashboardView", () => {
     });
   });
 
+  describe("forced demo mode (NEXT_PUBLIC_DEMO_MODE=true)", () => {
+    beforeEach(() => {
+      vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "true");
+      swrMock.mockReturnValue({ data: undefined, error: undefined });
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("shows the deterministic fixtures banner", () => {
+      render(<DashboardView />);
+      const banner = screen.getByTestId("demo-banner");
+      expect(banner).toHaveAttribute("data-force-demo", "true");
+      expect(screen.getByText(/Sample data — deterministic gateway fixtures/)).toBeInTheDocument();
+    });
+
+    it("does not show the loading state when demo is forced", () => {
+      render(<DashboardView />);
+      expect(screen.queryByText(/Synchronizing with Gateway telemetry/)).not.toBeInTheDocument();
+    });
+  });
+
   describe("live mode (backend reachable)", () => {
+    it("does not render the simulate-request panel", () => {
+      swrMock.mockImplementation((key: string) => {
+        if (key.includes("/admin/logs")) {
+          return {
+            data: {
+              logs: [
+                {
+                  id: "live-1",
+                  timestamp: "t",
+                  model: "live-model",
+                  provider: "openai",
+                  costUsd: 0.05,
+                  latencyMs: 123,
+                  status: "success",
+                  fallbackUsed: false,
+                },
+              ],
+            },
+            error: undefined,
+          };
+        }
+        return { data: undefined, error: undefined };
+      });
+      render(<DashboardView />);
+      expect(screen.queryByTestId("simulate-request-panel")).not.toBeInTheDocument();
+    });
+
     it("renders live data without the demo banner", () => {
       swrMock.mockImplementation((key: string) => {
         if (key.includes("/admin/logs")) {

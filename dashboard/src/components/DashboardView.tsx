@@ -6,10 +6,15 @@ import {
   type AuditLog,
   type BudgetInfo,
   type ProviderHealth,
+  type SimulationScenario,
   summarize,
   normalizeHealth,
   latencyPolyline,
   budgetUsedPct,
+  createSimulatedLog,
+  applyBudgetSimulation,
+  applyHealthSimulation,
+  SIMULATION_LABELS,
   DEMO_LOGS,
   DEMO_BUDGETS,
   DEMO_HEALTH,
@@ -17,8 +22,11 @@ import {
 
 const API_BASE = process.env.NEXT_PUBLIC_GATEWAY_URL || "http://localhost:3000";
 const API_KEY = process.env.NEXT_PUBLIC_GATEWAY_API_KEY || "gateway-admin-key";
-// Force demo mode regardless of backend availability (useful for static previews).
-const FORCE_DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+
+/** Force demo mode regardless of backend availability (useful for static previews). */
+function isForceDemo(): boolean {
+  return process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+}
 
 const fetcher = async (url: string) => {
   const res = await fetch(url, { headers: { Authorization: `Bearer ${API_KEY}` } });
@@ -89,10 +97,15 @@ function HoverCard({
   );
 }
 
-function DemoBanner() {
+function DemoBanner({ forceDemo }: { forceDemo: boolean }) {
+  const message = forceDemo
+    ? "Sample data — deterministic gateway fixtures."
+    : `Gateway unreachable — showing sample data.`;
+
   return (
     <div
       data-testid="demo-banner"
+      data-force-demo={forceDemo ? "true" : "false"}
       style={{
         background: "rgba(245, 158, 11, 0.1)",
         border: "1px solid rgba(245, 158, 11, 0.3)",
@@ -108,12 +121,67 @@ function DemoBanner() {
       }}
     >
       <span style={{ width: 8, height: 8, background: "#f59e0b", borderRadius: "50%", display: "inline-block", boxShadow: "0 0 8px #f59e0b" }} />
-      DEMO MODE — showing sample data. The gateway backend at <strong style={{ margin: "0 4px" }}>{API_BASE}</strong> is not reachable.
+      {message}
     </div>
   );
 }
 
+const SIMULATION_SCENARIOS: SimulationScenario[] = [
+  "provider_fallback",
+  "budget_exceeded",
+  "guardrail_blocked",
+];
+
+function SimulateRequestPanel({ onSimulate }: { onSimulate: (scenario: SimulationScenario) => void }) {
+  return (
+    <section
+      data-testid="simulate-request-panel"
+      style={{
+        background: "linear-gradient(135deg, rgba(30, 41, 59, 0.3) 0%, rgba(15, 23, 42, 0.5) 100%)",
+        border: "1px solid rgba(255, 255, 255, 0.08)",
+        borderRadius: 16,
+        padding: 24,
+        marginBottom: 40,
+        boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.3)",
+        backdropFilter: "blur(12px)",
+      }}
+    >
+      <h2 style={{ margin: "0 0 6px", fontSize: 18, fontWeight: 800 }}>Simulate request</h2>
+      <p style={{ margin: "0 0 16px", fontSize: 12, color: "#64748b" }}>
+        Push a sample decision through the proxy control point — audit log, budgets, and provider health update together.
+      </p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+        {SIMULATION_SCENARIOS.map((scenario) => (
+          <button
+            key={scenario}
+            type="button"
+            data-testid={`simulate-${scenario}`}
+            onClick={() => onSimulate(scenario)}
+            style={{
+              background: "rgba(6, 182, 212, 0.1)",
+              border: "1px solid rgba(6, 182, 212, 0.25)",
+              borderRadius: 10,
+              padding: "10px 16px",
+              color: "#22d3ee",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+            }}
+          >
+            {SIMULATION_LABELS[scenario]}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function DashboardView() {
+  const [simulatedLogs, setSimulatedLogs] = useState<AuditLog[]>([]);
+  const [simulatedBudgets, setSimulatedBudgets] = useState<BudgetInfo[] | null>(null);
+  const [simulatedHealth, setSimulatedHealth] = useState<Record<string, ProviderHealth> | null>(null);
+
   const { data: logsData, error: logsError } = useSWR<{ logs: AuditLog[] }>(
     `${API_BASE}/admin/logs?limit=50`,
     fetcher,
@@ -130,17 +198,35 @@ export function DashboardView() {
     { refreshInterval: 5000, shouldRetryOnError: false }
   );
 
-  const loading = !FORCE_DEMO && !logsData && !logsError;
+  const forceDemo = isForceDemo();
+  const loading = !forceDemo && !logsData && !logsError;
   // Demo mode kicks in when forced, or when the primary feed errors out (no backend).
-  const demoMode = FORCE_DEMO || Boolean(logsError);
+  const demoMode = forceDemo || Boolean(logsError);
 
-  const logs = demoMode ? DEMO_LOGS : Array.isArray(logsData?.logs) ? logsData!.logs : [];
-  const budgets = demoMode
+  const baseLogs = demoMode ? DEMO_LOGS : Array.isArray(logsData?.logs) ? logsData!.logs : [];
+  const logs = demoMode ? [...simulatedLogs, ...baseLogs] : baseLogs;
+
+  const baseBudgets = demoMode
     ? DEMO_BUDGETS
     : Array.isArray(budgetsData?.budgets)
       ? budgetsData!.budgets
       : [];
-  const health = normalizeHealth(demoMode ? DEMO_HEALTH : healthData?.providers);
+  const budgets = demoMode && simulatedBudgets ? simulatedBudgets : baseBudgets;
+
+  const baseHealth = demoMode ? DEMO_HEALTH : healthData?.providers;
+  const healthSource = demoMode && simulatedHealth ? simulatedHealth : baseHealth;
+  const health = normalizeHealth(healthSource);
+
+  const handleSimulate = (scenario: SimulationScenario) => {
+    const newLog = createSimulatedLog(scenario, simulatedLogs.length);
+    setSimulatedLogs((prev) => [newLog, ...prev]);
+    setSimulatedBudgets((prev) =>
+      applyBudgetSimulation(prev ?? DEMO_BUDGETS, scenario, newLog)
+    );
+    setSimulatedHealth((prev) =>
+      applyHealthSimulation(prev ?? DEMO_HEALTH, scenario)
+    );
+  };
 
   const { totalCost, avgLatency, blockedCount, requestCount } = summarize(logs);
 
@@ -165,7 +251,7 @@ export function DashboardView() {
     <div style={{ minHeight: "100vh", background: "#060813", color: "#f8fafc", fontFamily: "'Inter', system-ui, sans-serif", padding: "40px 24px", backgroundImage: "radial-gradient(circle at 50% 0%, rgba(6, 182, 212, 0.08) 0%, transparent 50%)" }}>
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
 
-        {demoMode && <DemoBanner />}
+        {demoMode && <DemoBanner forceDemo={forceDemo} />}
 
         {/* Dynamic header with a beautiful live indicator */}
         <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 40, borderBottom: "1px solid rgba(255, 255, 255, 0.05)", paddingBottom: 24 }}>
@@ -200,6 +286,8 @@ export function DashboardView() {
             100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
           }
         `}</style>
+
+        {demoMode && <SimulateRequestPanel onSimulate={handleSimulate} />}
 
         {/* Telemetry Metric Cards */}
         <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 20, marginBottom: 40 }}>

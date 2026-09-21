@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3001",
+    "demo:ui": "cross-env NEXT_PUBLIC_DEMO_MODE=true next dev -p 3001",
     "build": "next build",
     "start": "next start -p 3001",
     "lint": "next lint",
@@ -23,6 +24,7 @@
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "cross-env": "^7.0.3",
     "jsdom": "^25.0.0",
     "typescript": "^5.3.0",
     "vite": "^7.3.6",

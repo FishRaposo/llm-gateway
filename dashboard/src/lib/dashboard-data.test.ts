@@ -8,6 +8,9 @@ import {
   normalizeHealth,
   latencyPolyline,
   budgetUsedPct,
+  createSimulatedLog,
+  applyBudgetSimulation,
+  applyHealthSimulation,
   DEMO_LOGS,
   DEMO_BUDGETS,
   DEMO_HEALTH,
@@ -123,5 +126,37 @@ describe("demo fixtures", () => {
     expect(Object.keys(DEMO_HEALTH).length).toBeGreaterThan(0);
     // Demo logs include at least one blocked entry so the violations card is non-zero.
     expect(blockedCount(DEMO_LOGS)).toBeGreaterThan(0);
+  });
+});
+
+describe("simulation helpers", () => {
+  it("createSimulatedLog builds distinct rows per scenario", () => {
+    const fallback = createSimulatedLog("provider_fallback", 0);
+    const budget = createSimulatedLog("budget_exceeded", 1);
+    const guardrail = createSimulatedLog("guardrail_blocked", 2);
+
+    expect(fallback.status).toBe("success");
+    expect(fallback.fallbackUsed).toBe(true);
+    expect(budget.status).toBe("budget_exceeded");
+    expect(guardrail.status).toBe("policy_denied");
+  });
+
+  it("applyBudgetSimulation charges production on fallback and caps on budget exceeded", () => {
+    const log = createSimulatedLog("provider_fallback", 0);
+    const afterFallback = applyBudgetSimulation(DEMO_BUDGETS, "provider_fallback", log);
+    const prodAfterFallback = afterFallback.find((b) => b.key === "team-prod");
+    expect(prodAfterFallback!.usedUsd).toBeGreaterThan(DEMO_BUDGETS[1].usedUsd);
+
+    const afterExceeded = applyBudgetSimulation(DEMO_BUDGETS, "budget_exceeded", log);
+    const prodAfterExceeded = afterExceeded.find((b) => b.key === "team-prod");
+    expect(prodAfterExceeded!.usedUsd).toBe(prodAfterExceeded!.limitUsd);
+    expect(prodAfterExceeded!.remainingUsd).toBe(0);
+  });
+
+  it("applyHealthSimulation degrades openai on provider fallback", () => {
+    const updated = applyHealthSimulation(DEMO_HEALTH, "provider_fallback");
+    expect(updated.openai.status).toBe("degraded");
+    expect(updated.openai.errorRate).toBeGreaterThan(DEMO_HEALTH.openai.errorRate);
+    expect(applyHealthSimulation(DEMO_HEALTH, "guardrail_blocked")).toEqual(DEMO_HEALTH);
   });
 });
