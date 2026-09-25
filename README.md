@@ -32,6 +32,15 @@ make demo-ui          # http://localhost:3001 — forced demo mode
 cd dashboard && npm run demo:ui
 ```
 
+Open http://localhost:3001.
+
+**Click path:**
+
+1. **Simulate request** → **Provider fallback** — audit log row shows primary failure and secondary provider success.
+2. **Simulate request** → **Budget exceeded** — request stopped; budget meter updates.
+3. **Simulate request** → **Guardrail blocked** — policy violation recorded before the model call.
+4. Scan **Provider health** and **Budgets** — they stay consistent with the new log rows.
+
 Against a live gateway:
 
 ```bash
