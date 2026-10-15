@@ -46,7 +46,7 @@ make test         # vitest run  -> 149 passing (backend); dashboard has 27 more
 make lint         # tsc --noEmit + eslint
 make typecheck    # tsc --noEmit
 make docker-up    # redis + gateway
-make demo         # build + print a sample OpenAI-compatible request
+make demo         # offline: build, start in mock mode, send one request (prints a 200)
 ```
 
 ## Current State

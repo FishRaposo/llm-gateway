@@ -31,15 +31,9 @@ docker-up: ## Start Redis + gateway
 docker-down: ## Stop all containers
 	docker compose down
 
-demo: ## Build the gateway and print a sample request
-	@echo "Starting LLM Gateway demo..."
-	@docker compose up -d redis
-	@$(NPM) run build
-	@echo "Gateway built. Start it with: node dist/index.js"
-	@echo "Sample request:"
-	@echo "  curl -X POST http://localhost:3000/v1/chat/completions \\"
-	@echo "    -H 'Content-Type: application/json' -H 'Authorization: Bearer demo-key' \\"
-	@echo "    -d '{\"model\": \"mock\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}]}'"
+demo: ## Offline demo: build, start in mock mode (no keys/.env/Redis), send one request
+	$(NPM) run build
+	bash scripts/demo.sh
 
 demo-ui: ## Start the dashboard in forced demo mode (no backend)
 	cd dashboard && npm run demo:ui

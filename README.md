@@ -13,10 +13,13 @@ Route requests across multiple providers (OpenAI, Anthropic, Gemini, Ollama) wit
 ## Quick Demo
 
 ```bash
+npm ci
 make demo
 ```
 
-Starts Redis, the gateway, and provides a sample curl command to test the proxy at http://localhost:3000
+No API keys, `.env` or Redis needed: builds the gateway, starts it on http://localhost:3000 with the
+built-in mock provider, sends one OpenAI-compatible request and prints the 200 response. Without
+provider keys `npm run dev` also serves mock completions; set `MOCK_PROVIDER=false` to turn that off.
 
 ### Portfolio demo (dashboard UI)
 

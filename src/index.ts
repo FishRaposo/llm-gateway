@@ -94,54 +94,72 @@ export function createApp(): express.Application {
   return app;
 }
 
-const app = createApp();
-const config = getConfig();
-const storage = initializeStorage(config);
-
-const server = app.listen(config.port, () => {
-  console.log(JSON.stringify({
-    level: "info",
-    message: "Gateway started",
-    port: config.port,
-    defaultModel: config.defaultModel,
-    providers: Object.keys(config.providers),
-  }));
-});
-
 /**
- * Gracefully shuts down the gateway server.
- * Stops accepting new connections, drains in-flight requests,
- * closes storage backends, and exits the process.
+ * Starts the HTTP server and installs graceful-shutdown handlers.
+ * Runs only when this file is the entry point (node dist/index.js, tsx), so
+ * tests can import createApp without opening a port.
  */
-async function shutdown(signal: string): Promise<void> {
-  console.log(JSON.stringify({ level: "info", message: "Shutdown initiated", signal }));
+function startServer(): void {
+  const app = createApp();
+  const config = getConfig();
+  const storage = initializeStorage(config);
+  const providerNames = Object.keys(config.providers);
 
-  // Stop accepting new connections
-  server.close(() => {
-    console.log(JSON.stringify({ level: "info", message: "HTTP server closed" }));
+  const server = app.listen(config.port, () => {
+    console.log(JSON.stringify({
+      level: "info",
+      message: "Gateway started",
+      port: config.port,
+      defaultModel: config.defaultModel,
+      providers: providerNames,
+    }));
+    if (providerNames.length === 1 && providerNames[0] === "mock") {
+      console.log(JSON.stringify({
+        level: "warn",
+        message: "Mock mode: no provider keys configured, serving canned completions from MockProvider. Set OPENAI_API_KEY (or another provider key) or MOCK_PROVIDER=false to disable.",
+      }));
+    }
   });
 
-  // Give in-flight requests a grace period to complete
-  const drainTimeoutMs = 10000;
-  await new Promise((resolve) => setTimeout(resolve, drainTimeoutMs));
+  /**
+   * Gracefully shuts down the gateway server.
+   * Stops accepting new connections, drains in-flight requests,
+   * closes storage backends, and exits the process.
+   */
+  async function shutdown(signal: string): Promise<void> {
+    console.log(JSON.stringify({ level: "info", message: "Shutdown initiated", signal }));
 
-  // Close storage backends
-  try {
-    await storage.cacheStore.close();
-  } catch {
-    // ignore
-  }
-  try {
-    await storage.budgetTracker.close();
-  } catch {
-    // ignore
+    // Stop accepting new connections
+    server.close(() => {
+      console.log(JSON.stringify({ level: "info", message: "HTTP server closed" }));
+    });
+
+    // Give in-flight requests a grace period to complete
+    const drainTimeoutMs = 10000;
+    await new Promise((resolve) => setTimeout(resolve, drainTimeoutMs));
+
+    // Close storage backends
+    try {
+      await storage.cacheStore.close();
+    } catch {
+      // ignore
+    }
+    try {
+      await storage.budgetTracker.close();
+    } catch {
+      // ignore
+    }
+
+    console.log(JSON.stringify({ level: "info", message: "Shutdown complete" }));
+    process.exit(0);
   }
 
-  console.log(JSON.stringify({ level: "info", message: "Shutdown complete" }));
-  process.exit(0);
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
+if (require.main === module) {
+  startServer();
+}
 
-export default app;
+export default createApp;

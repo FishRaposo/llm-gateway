@@ -179,6 +179,29 @@ export async function handleRequest(
       return;
     }
 
+    // Middleware refusals (auth 401, budget 402, policy/guardrails 403, rate
+    // limit 429) throw errors carrying their own statusCode and code. Return
+    // those as-is; only genuine provider/gateway failures become a 502.
+    const refusal = toClientRefusal(error);
+    if (refusal) {
+      const auditEntry = buildAuditEntry(context, null, duration, refusal.auditStatus, message);
+      await storage.auditLog.write(auditEntry).catch(() => {});
+      recordGatewayError(refusal.code, "unknown", context.originalModel ?? "unknown");
+      recordGatewayRequest({
+        status: refusal.auditStatus,
+        provider: "unknown",
+        model: context.originalModel ?? "unknown",
+        cacheHit: false,
+        fallbackUsed: false,
+        durationMs: duration,
+        costUsd: 0,
+      });
+      res.status(refusal.statusCode).json({
+        error: { message, type: refusal.type, code: refusal.code },
+      });
+      return;
+    }
+
     const auditEntry = buildAuditEntry(context, null, duration, "error", message);
     await storage.auditLog.write(auditEntry).catch(() => {});
     recordGatewayError("gateway_error", "unknown", context?.originalModel ?? "unknown");
@@ -196,6 +219,39 @@ export async function handleRequest(
       error: { message, type: "gateway_error", code: "provider_error" },
     });
   }
+}
+
+interface ClientRefusal {
+  statusCode: number;
+  code: string;
+  type: string;
+  auditStatus: AuditEntry["status"];
+}
+
+const REFUSAL_TYPES: Record<number, { type: string; auditStatus: AuditEntry["status"] }> = {
+  401: { type: "authentication_error", auditStatus: "error" },
+  402: { type: "budget_error", auditStatus: "budget_exceeded" },
+  403: { type: "policy_error", auditStatus: "policy_denied" },
+  429: { type: "rate_limit_error", auditStatus: "rate_limited" },
+};
+
+/**
+ * Recognizes a 4xx error thrown by a middleware (it carries `statusCode` and
+ * `code`) and describes the client response for it.
+ * @param error - The caught error.
+ * @returns The refusal to send, or null for any other failure.
+ */
+export function toClientRefusal(error: unknown): ClientRefusal | null {
+  if (!(error instanceof Error)) return null;
+  const { statusCode, code } = error as Error & { statusCode?: unknown; code?: unknown };
+  if (typeof statusCode !== "number" || statusCode < 400 || statusCode >= 500) return null;
+  const known = REFUSAL_TYPES[statusCode] ?? { type: "invalid_request_error", auditStatus: "error" as const };
+  return {
+    statusCode,
+    code: typeof code === "string" && code ? code : "invalid_request",
+    type: known.type,
+    auditStatus: known.auditStatus,
+  };
 }
 
 /**

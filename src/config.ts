@@ -121,17 +121,35 @@ export function loadConfig(): GatewayConfig {
     };
   }
 
+  // Offline mock mode. MOCK_PROVIDER=true always registers the deterministic
+  // MockProvider; MOCK_PROVIDER=false never does; when unset, the mock is
+  // registered only if no real provider is configured, so a fresh clone with
+  // no keys serves canned completions instead of failing every request.
+  const mockSetting = (process.env.MOCK_PROVIDER ?? "").trim().toLowerCase();
+  const realProviderCount = Object.keys(providers).length;
+  const mockEnabled =
+    mockSetting === "true" || mockSetting === "1" ||
+    (mockSetting === "" && realProviderCount === 0);
+  if (mockEnabled) {
+    providers.mock = { type: "mock", apiKey: "mock" };
+  }
+  // With the mock as the only provider and no routing.yaml, route to it by
+  // default; the built-in default (openai) would fail with "not configured".
+  const mockOnly = mockEnabled && realProviderCount === 0;
+
   const rawConfig = {
     port: parseInt(process.env.GATEWAY_PORT || "3000", 10),
     logLevel: process.env.LOG_LEVEL || "info",
-    defaultModel: process.env.DEFAULT_MODEL || "gpt-4o-mini",
-    defaultProvider: process.env.DEFAULT_PROVIDER || "openai",
+    defaultModel: process.env.DEFAULT_MODEL || (mockOnly ? "mock" : "gpt-4o-mini"),
+    defaultProvider: process.env.DEFAULT_PROVIDER || (mockOnly ? "mock" : "openai"),
     databasePath: process.env.DATABASE_PATH || "./data/gateway.db",
     redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
     gatewayApiKey: process.env.GATEWAY_API_KEY || "gateway-admin-key",
     providers,
     routing: routing ?? {
-      default: { provider: "openai", model: "gpt-4o-mini" },
+      default: mockOnly
+        ? { provider: "mock", model: "mock" }
+        : { provider: "openai", model: "gpt-4o-mini" },
       rules: [],
       fallback: { enabled: true, maxRetries: 3, circuitBreaker: { failureThreshold: 5, resetTimeoutMs: 60000 } },
     },
