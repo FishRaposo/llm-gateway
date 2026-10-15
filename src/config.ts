@@ -65,6 +65,31 @@ function loadYamlFile<T>(filePath: string): T | null {
   return normalizeKeys(raw) as T;
 }
 
+const MOCK_TRUE = new Set(["true", "1", "yes", "on"]);
+const MOCK_FALSE = new Set(["false", "0", "no", "off"]);
+
+/**
+ * Decides whether the MockProvider is registered.
+ * MOCK_PROVIDER true/1/yes/on: always; false/0/no/off: never (case-insensitive).
+ * Unset or empty: only when no real provider is configured and NODE_ENV is not
+ * "production", so a production deploy that lost its keys fails loudly instead
+ * of serving fake completions.
+ * @param raw - Raw MOCK_PROVIDER value.
+ * @param realProviderCount - Number of real providers configured from env.
+ * @param isProduction - Whether NODE_ENV is "production".
+ * @returns True if the mock provider should be registered.
+ * @throws Error for any other MOCK_PROVIDER value.
+ */
+export function resolveMockEnabled(raw: string | undefined, realProviderCount: number, isProduction: boolean): boolean {
+  const value = (raw ?? "").trim().toLowerCase();
+  if (MOCK_TRUE.has(value)) return true;
+  if (MOCK_FALSE.has(value)) return false;
+  if (value === "") return realProviderCount === 0 && !isProduction;
+  throw new Error(
+    `Invalid MOCK_PROVIDER value "${raw}": use true/1/yes/on, false/0/no/off, or leave it unset`
+  );
+}
+
 /**
  * Loads the full gateway configuration from environment variables and YAML files.
  * Environment variables take precedence over YAML defaults.
@@ -121,15 +146,15 @@ export function loadConfig(): GatewayConfig {
     };
   }
 
-  // Offline mock mode. MOCK_PROVIDER=true always registers the deterministic
-  // MockProvider; MOCK_PROVIDER=false never does; when unset, the mock is
-  // registered only if no real provider is configured, so a fresh clone with
-  // no keys serves canned completions instead of failing every request.
-  const mockSetting = (process.env.MOCK_PROVIDER ?? "").trim().toLowerCase();
+  // Offline mock mode (see resolveMockEnabled). Outside production, a fresh
+  // clone with no keys serves canned completions instead of failing every
+  // request; in production the mock must be requested explicitly.
   const realProviderCount = Object.keys(providers).length;
-  const mockEnabled =
-    mockSetting === "true" || mockSetting === "1" ||
-    (mockSetting === "" && realProviderCount === 0);
+  const mockEnabled = resolveMockEnabled(
+    process.env.MOCK_PROVIDER,
+    realProviderCount,
+    process.env.NODE_ENV === "production"
+  );
   if (mockEnabled) {
     providers.mock = { type: "mock", apiKey: "mock" };
   }

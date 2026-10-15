@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig, invalidateConfig } from "../src/config";
+import { loadConfig, invalidateConfig, resolveMockEnabled } from "../src/config";
 import { clearProviderRegistry } from "../src/providers/registry";
 import { toClientRefusal } from "../src/proxy/handler";
 
@@ -21,9 +21,19 @@ const ENV_KEYS = [
   "REDIS_URL",
   "DEFAULT_MODEL",
   "DEFAULT_PROVIDER",
+  "NODE_ENV",
 ];
 
-let savedEnv: Record<string, string | undefined> = {};
+// Snapshot taken once, before any test touches the environment; every hook
+// restores from it so one suite's settings (e.g. GATEWAY_API_KEY) can't leak.
+const ORIGINAL_ENV: Record<string, string | undefined> = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
+
+function restoreEnv(): void {
+  for (const [k, v] of Object.entries(ORIGINAL_ENV)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+}
 let emptyConfigDir: string;
 
 /**
@@ -41,19 +51,17 @@ function freshCloneEnv(): void {
   process.env.DEFAULT_MODEL = "";
   process.env.DEFAULT_PROVIDER = "";
   process.env.CONFIG_DIR = emptyConfigDir;
+  process.env.NODE_ENV = "test";
 }
 
 beforeEach(() => {
-  savedEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
+  restoreEnv();
   emptyConfigDir = mkdtempSync(join(tmpdir(), "llm-gateway-test-config-"));
   freshCloneEnv();
 });
 
 afterEach(() => {
-  for (const [k, v] of Object.entries(savedEnv)) {
-    if (v === undefined) delete process.env[k];
-    else process.env[k] = v;
-  }
+  restoreEnv();
   rmSync(emptyConfigDir, { recursive: true, force: true });
   invalidateConfig();
   clearProviderRegistry();
@@ -91,6 +99,39 @@ describe("mock mode configuration", () => {
   });
 });
 
+describe("mock mode in production", () => {
+  it("never auto-enables the mock when NODE_ENV=production and no keys are set", () => {
+    process.env.NODE_ENV = "production";
+    const config = loadConfig();
+    expect(config.providers.mock).toBeUndefined();
+    expect(config.routing.default.provider).toBe("openai");
+  });
+
+  it("still honours an explicit MOCK_PROVIDER=true in production", () => {
+    process.env.NODE_ENV = "production";
+    process.env.MOCK_PROVIDER = "true";
+    const config = loadConfig();
+    expect(Object.keys(config.providers)).toEqual(["mock"]);
+    expect(config.routing.default.provider).toBe("mock");
+  });
+});
+
+describe("MOCK_PROVIDER parsing", () => {
+  it.each(["true", "TRUE", "1", "yes", "Yes", "on", " ON "])("%j enables the mock even with real providers", (raw) => {
+    expect(resolveMockEnabled(raw, 1, true)).toBe(true);
+  });
+
+  it.each(["false", "False", "0", "no", "NO", "off", "Off"])("%j disables the mock even with no providers", (raw) => {
+    expect(resolveMockEnabled(raw, 0, false)).toBe(false);
+  });
+
+  it("rejects unknown values loudly", () => {
+    expect(() => resolveMockEnabled("maybe", 0, false)).toThrow(/Invalid MOCK_PROVIDER value "maybe"/);
+    process.env.MOCK_PROVIDER = "enabled";
+    expect(() => loadConfig()).toThrow(/Invalid MOCK_PROVIDER/);
+  });
+});
+
 describe("refusal mapping", () => {
   function refusalError(statusCode: number, code: string): Error {
     return Object.assign(new Error("refused"), { statusCode, code });
@@ -113,13 +154,14 @@ describe("refusal mapping", () => {
 });
 
 describe("POST /v1/chat/completions in mock mode (HTTP level)", () => {
+  let suiteConfigDir: string;
   let server: Server;
   let baseUrl: string;
   const KEY = "mock-mode-test-key";
 
   beforeAll(async () => {
-    savedEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
-    emptyConfigDir = mkdtempSync(join(tmpdir(), "llm-gateway-test-config-"));
+    restoreEnv();
+    emptyConfigDir = suiteConfigDir = mkdtempSync(join(tmpdir(), "llm-gateway-test-config-"));
     freshCloneEnv();
     process.env.GATEWAY_API_KEY = KEY;
     process.env.DATABASE_PATH = ":memory:";
@@ -138,18 +180,27 @@ describe("POST /v1/chat/completions in mock mode (HTTP level)", () => {
 
   afterAll(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    rmSync(suiteConfigDir, { recursive: true, force: true });
+    restoreEnv();
   });
 
-  function chat(authorization?: string): Promise<Response> {
+  function chat(authorization?: string, content = "Hello"): Promise<Response> {
     return fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...(authorization ? { Authorization: authorization } : {}),
       },
-      body: JSON.stringify({ model: "mock", messages: [{ role: "user", content: "Hello" }] }),
+      body: JSON.stringify({ model: "mock", messages: [{ role: "user", content }] }),
     });
   }
+
+  it("reports mock: true on /health", async () => {
+    const res = await fetch(`${baseUrl}/health`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: "ok", version: "1.0.0", mock: true });
+  });
+
 
   it("returns a 200 chat completion from the mock provider with no keys configured", async () => {
     const res = await chat(`Bearer ${KEY}`);
@@ -174,5 +225,51 @@ describe("POST /v1/chat/completions in mock mode (HTTP level)", () => {
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.error.code).toBe("unauthorized");
+  });
+});
+
+describe("/health in production with no keys (HTTP level)", () => {
+  let suiteConfigDir: string;
+  let server: Server;
+  let baseUrl: string;
+
+  beforeAll(async () => {
+    restoreEnv();
+    emptyConfigDir = suiteConfigDir = mkdtempSync(join(tmpdir(), "llm-gateway-test-config-"));
+    freshCloneEnv();
+    process.env.NODE_ENV = "production";
+    process.env.DATABASE_PATH = ":memory:";
+    process.env.REDIS_URL = "redis://127.0.0.1:1";
+    invalidateConfig();
+    clearProviderRegistry();
+
+    const { createApp } = await import("../src/index");
+    const app = createApp();
+    await new Promise<void>((resolve) => {
+      server = app.listen(0, () => resolve());
+    });
+    baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    rmSync(suiteConfigDir, { recursive: true, force: true });
+    restoreEnv();
+  });
+
+  it("reports mock: false and does not serve fake completions", async () => {
+    const health = await fetch(`${baseUrl}/health`);
+    expect(await health.json()).toEqual({ status: "ok", version: "1.0.0", mock: false });
+
+    const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer gateway-admin-key" },
+      // Distinct prompt: the in-memory response cache is process-wide, and the
+      // mock-mode suite above already cached a reply for "Hello".
+      body: JSON.stringify({ model: "mock", messages: [{ role: "user", content: "Hello from a production deploy" }] }),
+    });
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.error.code).toBe("provider_error");
   });
 });

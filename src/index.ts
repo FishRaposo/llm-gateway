@@ -66,7 +66,7 @@ export function createApp(): express.Application {
   app.use(express.json({ limit: "10mb" }));
 
   app.get("/health", (_req: express.Request, res: express.Response) => {
-    res.json({ status: "ok", version: "1.0.0" });
+    res.json({ status: "ok", version: "1.0.0", mock: Boolean(config.providers.mock) });
   });
 
   app.get("/metrics", (_req: express.Request, res: express.Response) => {
