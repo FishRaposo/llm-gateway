@@ -17,12 +17,12 @@
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^13.0.3",
     "cors": "^2.8.5",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "gpt-tokenizer": "^4.0.0",
+    "dotenv": "^18.0.8",
+    "express": "^5.3.0",
+    "gpt-tokenizer": "^4.1.0",
     "ioredis": "^6.0.0",
     "js-yaml": "^5.3.0",
-    "uuid": "^14.0.2",
+    "uuid": "^14.0.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -30,14 +30,14 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.6",
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^26.2.0",
-    "@typescript-eslint/eslint-plugin": "^8.67.0",
+    "@types/node": "^26.6.5",
+    "@typescript-eslint/eslint-plugin": "^8.72.0",
     "@typescript-eslint/parser": "^8.67.0",
-    "@vitest/coverage-v8": "^4.1.11",
-    "eslint": "^10.8.1",
-    "tsx": "^4.23.12",
-    "typescript": "~6.0.3",
-    "vitest": "^4.1.10"
+    "@vitest/coverage-v8": "^5.0.5",
+    "eslint": "^10.13.0",
+    "tsx": "^4.23.15",
+    "typescript": "~7.0.2",
+    "vitest": "^5.0.5"
   },
   "engines": {
     "node": ">=22"
