@@ -24,7 +24,7 @@ const GatewayConfigSchema = z.object({
   databasePath: z.string().default("./data/gateway.db"),
   redisUrl: z.string().default("redis://localhost:6379"),
   gatewayApiKey: z.string().default("gateway-admin-key"),
-  providers: z.record(ProviderConfigSchema).default({}),
+  providers: z.record(z.string(), ProviderConfigSchema).default({}),
   routing: z.any().default({ default: { provider: "openai", model: "gpt-4o-mini" }, rules: [], fallback: { enabled: true, maxRetries: 3, circuitBreaker: { failureThreshold: 5, resetTimeoutMs: 60000 } } }),
   policy: z.any().default({ enabled: false, evalOrder: [], rules: [] }),
   budgets: z.any().default({ enabled: false, globalLimitUsd: 1000, defaultKeyBudgetUsd: 100, period: "monthly", alertThresholdPercent: 80 }),

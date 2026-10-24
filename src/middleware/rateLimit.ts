@@ -151,7 +151,7 @@ export async function getRateLimitStatus(
       const windowStart = now - windowMs;
       await client.zremrangebyscore(key, 0, windowStart);
       const count = (await client.zcard(key)) as number;
-      const oldest = await client.zrange(key, 0, 0, "WITHSCORES");
+      const oldest = await client.zrange(key, "0", "0", "WITHSCORES");
       let resetMs = windowMs;
       if (oldest && oldest.length >= 2) {
         const firstTs = parseInt(oldest[1], 10);
