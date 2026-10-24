@@ -66,10 +66,11 @@ export class MockProvider extends BaseProvider {
    * @param request - Provider request.
    * @returns Async iterator of mock chunks.
    */
-  async *streamComplete(request: ProviderRequest): AsyncIterable<ProviderResponse> {
+  async *streamComplete(request: ProviderRequest, signal?: AbortSignal): AsyncIterable<ProviderResponse> {
     const words = this.mockConfig.defaultResponse!.split(" ");
 
     for (const word of words) {
+      if (signal?.aborted) return;
       await this.simulateLatency();
       yield {
         id: `mock-stream-${uuidv4()}`,

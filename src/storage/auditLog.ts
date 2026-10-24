@@ -41,17 +41,21 @@ export class AuditLogStorage {
           error_message TEXT,
           routing_decision TEXT,
           cache_hit INTEGER DEFAULT 0,
-          fallback_used INTEGER DEFAULT 0
+          fallback_used INTEGER DEFAULT 0,
+          cost_basis TEXT
         )
       `);
       db.exec("CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp)");
       db.exec("CREATE INDEX IF NOT EXISTS idx_audit_api_key ON audit_log(api_key)");
       db.exec("CREATE INDEX IF NOT EXISTS idx_audit_model ON audit_log(model)");
 
-      // Additive migration for databases created before account_id existed.
+      // Additive migrations for databases created before these columns existed.
       const cols = db.prepare("PRAGMA table_info(audit_log)").all() as Array<{ name: string }>;
       if (cols.length > 0 && !cols.some((c) => c.name === "account_id")) {
         db.exec("ALTER TABLE audit_log ADD COLUMN account_id TEXT");
+      }
+      if (cols.length > 0 && !cols.some((c) => c.name === "cost_basis")) {
+        db.exec("ALTER TABLE audit_log ADD COLUMN cost_basis TEXT");
       }
       db.exec("CREATE INDEX IF NOT EXISTS idx_audit_account ON audit_log(account_id)");
     } catch {
@@ -74,8 +78,8 @@ export class AuditLogStorage {
       const stmt = this.db.prepare(`
         INSERT INTO audit_log (id, timestamp, api_key, api_key_name, account_id, model, provider,
           input_tokens, output_tokens, cost_usd, latency_ms, status, error_message,
-          routing_decision, cache_hit, fallback_used)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          routing_decision, cache_hit, fallback_used, cost_basis)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       stmt.run(
         safeEntry.id,
@@ -93,7 +97,8 @@ export class AuditLogStorage {
         safeEntry.errorMessage ?? null,
         safeEntry.routingDecision ?? null,
         safeEntry.cacheHit ? 1 : 0,
-        safeEntry.fallbackUsed ? 1 : 0
+        safeEntry.fallbackUsed ? 1 : 0,
+        safeEntry.costBasis ?? null
       );
     } else {
       console.log("[AuditLog]", JSON.stringify(safeEntry));
@@ -165,6 +170,7 @@ export class AuditLogStorage {
       routingDecision: row.routing_decision as string | undefined,
       cacheHit: Boolean(row.cache_hit),
       fallbackUsed: Boolean(row.fallback_used),
+      costBasis: (row.cost_basis as AuditEntry["costBasis"]) ?? undefined,
     }));
   }
 

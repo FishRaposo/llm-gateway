@@ -36,16 +36,20 @@ export function createBudgetMiddleware(config: GatewayConfig, budgetTracker: Bud
     // record id), never the plaintext credential. The plaintext fallback only
     // covers paths that bypassed auth entirely (direct handler tests).
     const budgetId = context.accountId ?? context.apiKeyId ?? context.apiKey;
-    const remaining = await budgetTracker.getRemainingBudget(budgetId);
 
-    if (remaining < estimatedCost) {
+    // Atomic admission: reserve the estimated cost under this requestId so
+    // concurrent requests cannot race past the limit. Idempotent — a replayed
+    // requestId observes the existing reservation rather than double-charging.
+    const reservation = await budgetTracker.reserve(budgetId, context.requestId, estimatedCost);
+    if (!reservation.allowed) {
       const error = new Error(
-        `Budget exceeded. Remaining: $${remaining.toFixed(4)}, estimated: $${estimatedCost.toFixed(4)}`
+        `Budget exceeded. Remaining: $${reservation.remaining.toFixed(4)}, estimated: $${estimatedCost.toFixed(4)}`
       ) as Error & { statusCode: number; code: string };
       error.statusCode = 402;
       error.code = "budget_exceeded";
       throw error;
     }
+    context.budgetReserved = true;
 
     return context;
   };

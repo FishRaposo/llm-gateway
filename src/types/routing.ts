@@ -18,6 +18,10 @@ export interface RequestContext {
   temperature?: number;
   maxTokens?: number;
   stream: boolean;
+  /** True while a budget reservation is held for this requestId. */
+  budgetReserved?: boolean;
+  /** Set when settlement occurred without measured provider usage. */
+  usageUnknown?: boolean;
   metadata: Record<string, unknown>;
   timestamp: string;
 }

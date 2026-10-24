@@ -120,12 +120,13 @@ describe("Budget Middleware (per-key enforcement by record id)", () => {
 
     // Remaining is read by record id and is finite — proving the limit is
     // enforced, not the Infinity no-op the old plaintext-key path returned.
+    // The middleware's admission reservation (one estimate) is already held.
     const before = await tracker.getRemainingBudget(recordId);
-    expect(before).toBeCloseTo(limit, 12);
+    expect(before).toBeCloseTo(limit - estimate, 12);
 
-    // Simulate the handler deducting actual spend by the same record id, drawing
-    // remaining below the next request's estimated cost.
-    await tracker.deductBudget(recordId, estimate * 2);
+    // Simulate the handler settling the reservation with actual spend at the
+    // same record id, drawing remaining below the next request's estimate.
+    await tracker.settle(recordId, "req-1", estimate * 2);
     const after = await tracker.getRemainingBudget(recordId);
     expect(after).toBeCloseTo(estimate * 0.5, 12);
     expect(after).toBeLessThan(estimate);

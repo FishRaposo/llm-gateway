@@ -1,27 +1,140 @@
-/** Budget tracking storage using Redis for real-time spend management. */
+/** Budget tracking storage using Redis for real-time spend management.
+ *
+ * The lifecycle is reserve → settle | release, keyed by requestId so every
+ * stage is idempotent and atomic under Redis (single Lua script per op) and
+ * trivially atomic in the in-memory development backend.
+ *
+ * Budget record (Redis JSON + memory): { used, limit|null, period,
+ * resetMonth, reserved: {requestId: amount} }. `limit: null` represents an
+ * unlimited budget — JSON cannot encode Infinity, so null is the stored
+ * sentinel and is interpreted as unbounded on read.
+ */
 
-const inMemoryBudgets = new Map<string, { used: number; limit: number; period: string; resetMonth: number }>();
+const inMemoryBudgets = new Map<string, BudgetRecord>();
+const inMemorySettled = new Set<string>();
+
+interface BudgetRecord {
+  used: number;
+  limit: number | null;
+  period?: string;
+  resetMonth?: number;
+  reserved?: Record<string, number>;
+}
+
+export interface ReserveResult {
+  allowed: boolean;
+  /** Remaining spend capacity after this reservation (Infinity when unbounded). */
+  remaining: number;
+  reason?: "reserved" | "already_reserved" | "exceeded";
+}
+
+/**
+ * Lua: atomically apply monthly reset, then reserve `estimated` under
+ * `requestId` iff already reserved (idempotent) or used+reserved+est <= limit.
+ * KEYS[1] = budget key. ARGV = requestId, estimated, currentMonth, limitIsSet.
+ * Returns [status, remaining]: status 0=reserved, 1=already_reserved, 2=exceeded.
+ */
+const RESERVE_LUA = `
+local raw = redis.call('GET', KEYS[1])
+local b = raw and cjson.decode(raw) or { used = 0, limit = cjson.null, reserved = {} }
+local month = tonumber(ARGV[3])
+if b.period == 'monthly' and b.resetMonth and b.resetMonth ~= month then
+  b.used = 0
+  b.resetMonth = month
+  b.reserved = {}
+end
+b.reserved = b.reserved or {}
+local reqId = ARGV[1]
+local est = tonumber(ARGV[2])
+local unbounded = (b.limit == cjson.null or b.limit == nil)
+local function reservedTotal()
+  local t = 0
+  for _, v in pairs(b.reserved) do t = t + v end
+  return t
+end
+if b.reserved[reqId] ~= nil then
+  local rem = unbounded and 1e15 or math.max(0, b.limit - b.used - reservedTotal())
+  return { 1, rem }
+end
+local capacity = unbounded and 1e15 or (b.limit - b.used - reservedTotal())
+if est > capacity then
+  return { 2, math.max(0, capacity) }
+end
+b.reserved[reqId] = est
+redis.call('SET', KEYS[1], cjson.encode(b))
+return { 0, unbounded and 1e15 or math.max(0, b.limit - b.used - reservedTotal()) }
+`;
+
+/**
+ * Lua: idempotent settle. If the settle marker already exists, no-op.
+ * Otherwise used += actual, drop the reservation, set a 24h marker.
+ * KEYS[1] = budget key, KEYS[2] = settled marker key.
+ * ARGV = requestId, actualCost, markerTtlSeconds.
+ */
+const SETTLE_LUA = `
+if redis.call('EXISTS', KEYS[2]) == 1 then return { 0 } end
+local raw = redis.call('GET', KEYS[1])
+local b = raw and cjson.decode(raw) or { used = 0, limit = cjson.null, reserved = {} }
+local actual = tonumber(ARGV[2])
+b.used = (b.used or 0) + actual
+if b.reserved then b.reserved[ARGV[1]] = nil end
+redis.call('SET', KEYS[1], cjson.encode(b))
+redis.call('SET', KEYS[2], '1', 'EX', tonumber(ARGV[3]))
+return { 1 }
+`;
+
+/**
+ * Lua: idempotent release — removes the reservation if present.
+ * KEYS[1] = budget key. ARGV = requestId.
+ */
+const RELEASE_LUA = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then return { 0 } end
+local b = cjson.decode(raw)
+if b.reserved and b.reserved[ARGV[1]] ~= nil then
+  b.reserved[ARGV[1]] = nil
+  redis.call('SET', KEYS[1], cjson.encode(b))
+  return { 1 }
+end
+return { 0 }
+`;
+
+const SETTLE_MARKER_TTL_SECONDS = 86400;
 
 export class BudgetTracker {
   private redisUrl: string;
   private client: import("ioredis").Redis | null = null;
+  private clientFailed = false;
   private globalLimitUsd: number;
+  /**
+   * When true, Redis is mandatory: reserve/settle/release reject instead of
+   * silently degrading to process-local memory (which would diverge across
+   * replicas). Strict connected-enforcement mode.
+   */
+  private requireRedis: boolean;
 
   /**
    * @param redisUrl - Redis connection URL.
    * @param globalLimitUsd - Global spend limit across all keys.
+   * @param requireRedis - When true, fail closed if Redis is unavailable.
    */
-  constructor(redisUrl: string, globalLimitUsd: number = Infinity) {
+  constructor(redisUrl: string, globalLimitUsd: number = Infinity, requireRedis = false) {
     this.redisUrl = redisUrl;
     this.globalLimitUsd = globalLimitUsd;
+    this.requireRedis = requireRedis;
   }
 
   /**
    * Gets or creates the Redis client connection.
-   * @returns Redis client instance.
+   * @returns Redis client instance, or null when unavailable in non-strict mode.
    */
   private async getClient(): Promise<import("ioredis").Redis | null> {
     if (this.client) return this.client;
+    if (this.clientFailed) {
+      // Retry connection each call — recovery is required for the
+      // outage/reconnect acceptance path.
+      this.clientFailed = false;
+    }
 
     try {
       const { default: Redis } = await import("ioredis");
@@ -31,10 +144,12 @@ export class BudgetTracker {
       await client.ping().catch(() => {
         this.client = null;
         client.disconnect();
+        this.clientFailed = true;
         return null;
       });
       return this.client;
     } catch {
+      this.clientFailed = true;
       return null;
     }
   }
@@ -43,16 +158,120 @@ export class BudgetTracker {
     return new Date().getMonth();
   }
 
-  private maybeResetBudget(budget: { used: number; limit: number; period?: string; resetMonth?: number }): { used: number; limit: number } {
+  private maybeResetBudget(budget: BudgetRecord): BudgetRecord {
     if (budget.period === "monthly" && budget.resetMonth !== undefined && budget.resetMonth !== this.currentMonth()) {
       budget.used = 0;
+      budget.reserved = {};
       budget.resetMonth = this.currentMonth();
     }
     return budget;
   }
 
+  private reservedTotal(budget: BudgetRecord): number {
+    let total = 0;
+    for (const key of Object.keys(budget.reserved ?? {})) total += budget.reserved![key];
+    return total;
+  }
+
+  private assertBackend(redis: import("ioredis").Redis | null): asserts redis is NonNullable<typeof redis> | never {
+    if (!redis && this.requireRedis) {
+      throw new Error("Budget enforcement requires Redis (strict mode); backend unavailable");
+    }
+  }
+
   /**
-   * Gets the remaining budget for an API key.
+   * Atomically reserves `estimatedCost` for `requestId` against the account
+   * budget. Idempotent: a repeated call for the same requestId reports the
+   * existing reservation rather than double-charging capacity.
+   */
+  async reserve(accountId: string, requestId: string, estimatedCost: number): Promise<ReserveResult> {
+    const redis = await this.getClient();
+    this.assertBackend(redis);
+    const budgetKey = `budget:${accountId}`;
+
+    if (redis) {
+      const res = (await redis.eval(RESERVE_LUA, 1, budgetKey, requestId, String(estimatedCost), String(this.currentMonth()), "1")) as [number, number];
+      const remaining = res[1] >= 1e15 ? Infinity : res[1];
+      return res[0] === 2
+        ? { allowed: false, remaining, reason: "exceeded" }
+        : { allowed: true, remaining, reason: res[0] === 1 ? "already_reserved" : "reserved" };
+    }
+
+    const budget = this.maybeResetBudget(
+      inMemoryBudgets.get(budgetKey) ?? { used: 0, limit: null, period: "monthly", resetMonth: this.currentMonth() }
+    );
+    budget.reserved ??= {};
+    inMemoryBudgets.set(budgetKey, budget);
+    if (budget.reserved[requestId] !== undefined) {
+      const rem = budget.limit === null ? Infinity : Math.max(0, budget.limit - budget.used - this.reservedTotal(budget));
+      return { allowed: true, remaining: rem, reason: "already_reserved" };
+    }
+    const capacity = budget.limit === null ? Infinity : budget.limit - budget.used - this.reservedTotal(budget);
+    if (estimatedCost > capacity) {
+      return { allowed: false, remaining: Math.max(0, capacity), reason: "exceeded" };
+    }
+    budget.reserved[requestId] = estimatedCost;
+    return {
+      allowed: true,
+      remaining: budget.limit === null ? Infinity : Math.max(0, budget.limit - budget.used - this.reservedTotal(budget)),
+      reason: "reserved",
+    };
+  }
+
+  /**
+   * Settles a reservation: charges `actualCost` to used spend and clears the
+   * reservation. `actualCost === null` records an explicit unknown-usage
+   * settlement — the reservation is released and usage is charged as 0 while
+   * callers mark the audit trail accordingly. Idempotent per requestId:
+   * replays are no-ops.
+   */
+  async settle(accountId: string, requestId: string, actualCost: number | null): Promise<void> {
+    const redis = await this.getClient();
+    this.assertBackend(redis);
+    const budgetKey = `budget:${accountId}`;
+    const actual = actualCost ?? 0;
+
+    if (redis) {
+      const markerKey = `budget_settled:${accountId}:${requestId}`;
+      await redis.eval(SETTLE_LUA, 2, budgetKey, markerKey, requestId, String(actual), String(SETTLE_MARKER_TTL_SECONDS));
+      return;
+    }
+
+    const marker = `${accountId}:${requestId}`;
+    if (inMemorySettled.has(marker)) return;
+    const budget = inMemoryBudgets.get(budgetKey);
+    if (budget) {
+      budget.used += actual;
+      if (budget.reserved) delete budget.reserved[requestId];
+      inMemoryBudgets.set(budgetKey, budget);
+    }
+    inMemorySettled.add(marker);
+  }
+
+  /**
+   * Releases a reservation without charging (request rejected before provider
+   * spend). Idempotent: releasing an absent reservation is a no-op.
+   */
+  async release(accountId: string, requestId: string): Promise<void> {
+    const redis = await this.getClient();
+    this.assertBackend(redis);
+    const budgetKey = `budget:${accountId}`;
+
+    if (redis) {
+      await redis.eval(RELEASE_LUA, 1, budgetKey, requestId);
+      return;
+    }
+
+    const budget = inMemoryBudgets.get(budgetKey);
+    if (budget?.reserved && budget.reserved[requestId] !== undefined) {
+      delete budget.reserved[requestId];
+      inMemoryBudgets.set(budgetKey, budget);
+    }
+  }
+
+  /**
+   * Gets the remaining budget for an API key, accounting for in-flight
+   * reservations so concurrent admissions cannot overspend.
    * @param key - API key identifier.
    * @returns Remaining budget in USD.
    */
@@ -63,19 +282,23 @@ export class BudgetTracker {
     if (redis) {
       const data = await redis.get(budgetKey);
       if (!data) return Infinity;
-      const budget = this.maybeResetBudget(JSON.parse(data) as { used: number; limit: number; period?: string; resetMonth?: number });
+      const budget = this.maybeResetBudget(JSON.parse(data) as BudgetRecord);
+      budget.limit = budget.limit ?? null;
       await redis.set(budgetKey, JSON.stringify(budget));
-      return Math.max(0, budget.limit - budget.used);
+      if (budget.limit === null) return Infinity;
+      return Math.max(0, budget.limit - budget.used - this.reservedTotal(budget));
     }
 
     const budget = inMemoryBudgets.get(budgetKey);
     if (!budget) return Infinity;
     this.maybeResetBudget(budget);
-    return Math.max(0, budget.limit - budget.used);
+    if (budget.limit === null || budget.limit === Infinity) return Infinity;
+    return Math.max(0, budget.limit - budget.used - this.reservedTotal(budget));
   }
 
   /**
-   * Deducts an amount from an API key's budget.
+   * Directly adds to an account's used spend. Retained for administrative and
+   * migration paths; request flows use reserve/settle.
    * @param key - API key identifier.
    * @param amount - Amount to deduct in USD.
    */
@@ -86,14 +309,14 @@ export class BudgetTracker {
     if (redis) {
       const data = await redis.get(budgetKey);
       const budget = data
-        ? this.maybeResetBudget(JSON.parse(data) as { used: number; limit: number; period?: string; resetMonth?: number })
-        : { used: 0, limit: Infinity };
+        ? this.maybeResetBudget(JSON.parse(data) as BudgetRecord)
+        : ({ used: 0, limit: null } as BudgetRecord);
       budget.used += amount;
       await redis.set(budgetKey, JSON.stringify(budget));
       return;
     }
 
-    const budget = inMemoryBudgets.get(budgetKey) ?? { used: 0, limit: Infinity, period: "monthly", resetMonth: this.currentMonth() };
+    const budget = inMemoryBudgets.get(budgetKey) ?? { used: 0, limit: null, period: "monthly", resetMonth: this.currentMonth() };
     this.maybeResetBudget(budget);
     budget.used += amount;
     inMemoryBudgets.set(budgetKey, budget);
@@ -102,50 +325,56 @@ export class BudgetTracker {
   /**
    * Sets the budget limit for an API key.
    * @param key - API key identifier.
-   * @param limit - Budget limit in USD.
+   * @param limit - Budget limit in USD (Infinity persists as the null sentinel).
    */
   async setBudget(key: string, limit: number): Promise<void> {
     const redis = await this.getClient();
     const budgetKey = `budget:${key}`;
+    const storedLimit = Number.isFinite(limit) ? limit : null;
 
     if (redis) {
       const data = await redis.get(budgetKey);
-      const existing = data ? (JSON.parse(data) as { used: number; limit: number; period?: string; resetMonth?: number }) : { used: 0, limit };
-      existing.limit = limit;
+      const existing = data ? (JSON.parse(data) as BudgetRecord) : ({ used: 0, limit: null } as BudgetRecord);
+      existing.limit = storedLimit;
       await redis.set(budgetKey, JSON.stringify(existing));
       return;
     }
 
-    const existing = inMemoryBudgets.get(budgetKey) ?? { used: 0, limit, period: "monthly", resetMonth: this.currentMonth() };
-    existing.limit = limit;
+    const existing = inMemoryBudgets.get(budgetKey) ?? { used: 0, limit: null, period: "monthly", resetMonth: this.currentMonth() };
+    existing.limit = storedLimit;
     inMemoryBudgets.set(budgetKey, existing);
   }
 
   /**
    * Gets the full budget status for an API key.
    * @param key - API key identifier.
-   * @returns Budget status with used, limit, and remaining amounts.
+   * @returns Budget status with used, reserved, limit, and remaining amounts.
    */
-  async getBudgetStatus(key: string): Promise<{ used: number; limit: number; remaining: number }> {
+  async getBudgetStatus(key: string): Promise<{ used: number; limit: number; remaining: number; reserved?: number }> {
     const redis = await this.getClient();
     const budgetKey = `budget:${key}`;
 
     if (redis) {
       const data = await redis.get(budgetKey);
-      if (!data) return { used: 0, limit: Infinity, remaining: Infinity };
-      const budget = this.maybeResetBudget(JSON.parse(data) as { used: number; limit: number; period?: string; resetMonth?: number });
+      if (!data) return { used: 0, limit: Infinity, remaining: Infinity, reserved: 0 };
+      const budget = this.maybeResetBudget(JSON.parse(data) as BudgetRecord);
+      budget.limit = budget.limit ?? null;
       await redis.set(budgetKey, JSON.stringify(budget));
-      return { used: budget.used, limit: budget.limit, remaining: Math.max(0, budget.limit - budget.used) };
+      const reserved = this.reservedTotal(budget);
+      const limit = budget.limit === null ? Infinity : budget.limit;
+      return { used: budget.used, limit, remaining: limit === Infinity ? Infinity : Math.max(0, limit - budget.used - reserved), reserved };
     }
 
     const budget = inMemoryBudgets.get(budgetKey);
-    if (!budget) return { used: 0, limit: Infinity, remaining: Infinity };
+    if (!budget) return { used: 0, limit: Infinity, remaining: Infinity, reserved: 0 };
     this.maybeResetBudget(budget);
-    return { used: budget.used, limit: budget.limit, remaining: Math.max(0, budget.limit - budget.used) };
+    const reserved = this.reservedTotal(budget);
+    const limit = budget.limit === null || budget.limit === Infinity ? Infinity : budget.limit;
+    return { used: budget.used, limit, remaining: limit === Infinity ? Infinity : Math.max(0, limit - budget.used - reserved), reserved };
   }
 
   /**
-   * Gets the total spend across all API keys.
+   * Gets the total spend (settled plus in-flight reservations) across all keys.
    * @returns Total global spend in USD.
    */
   async getGlobalSpend(): Promise<number> {
@@ -157,8 +386,8 @@ export class BudgetTracker {
       for (const k of keys) {
         const data = await redis.get(k);
         if (data) {
-          const budget = JSON.parse(data) as { used: number; limit: number };
-          total += budget.used;
+          const budget = JSON.parse(data) as BudgetRecord;
+          total += budget.used + this.reservedTotal(budget);
         }
       }
       return total;
@@ -166,13 +395,14 @@ export class BudgetTracker {
 
     let total = 0;
     for (const [, budget] of inMemoryBudgets) {
-      total += budget.used;
+      total += budget.used + this.reservedTotal(budget);
     }
     return total;
   }
 
   /**
    * Checks if a requested spend would exceed the global budget limit.
+   * Note: advisory check only — per-account reserve is the authoritative gate.
    * @param requestedCost - The cost to check against the global limit.
    * @returns True if the spend is within the global limit.
    */
@@ -191,7 +421,7 @@ export class BudgetTracker {
 
     if (redis) {
       const data = await redis.get(budgetKey);
-      const limit = data ? (JSON.parse(data) as { used: number; limit: number }).limit : Infinity;
+      const limit = data ? (JSON.parse(data) as BudgetRecord).limit : null;
       await redis.set(budgetKey, JSON.stringify({ used: 0, limit }));
       return;
     }
@@ -199,7 +429,16 @@ export class BudgetTracker {
     const budget = inMemoryBudgets.get(budgetKey);
     if (budget) {
       budget.used = 0;
+      budget.reserved = {};
     }
+  }
+
+  /**
+   * Clears all in-memory budget state. Test support only.
+   */
+  static resetInMemoryState(): void {
+    inMemoryBudgets.clear();
+    inMemorySettled.clear();
   }
 
   /**

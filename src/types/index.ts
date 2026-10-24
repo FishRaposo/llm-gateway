@@ -71,6 +71,11 @@ export interface AuditEntry {
   routingDecision?: string;
   cacheHit: boolean;
   fallbackUsed: boolean;
+  /**
+   * How costUsd was determined: measured provider usage, an estimate,
+   * explicitly unknown provider usage, or a zero-charge cache hit.
+   */
+  costBasis?: "measured" | "estimated" | "unknown" | "cached";
 }
 
 export interface LogFilters {

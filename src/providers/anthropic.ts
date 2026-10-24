@@ -59,7 +59,7 @@ export class AnthropicProvider extends BaseProvider {
    * @param request - Provider-formatted request.
    * @returns Async iterator of response chunks.
    */
-  async *streamComplete(request: ProviderRequest): AsyncIterable<ProviderResponse> {
+  async *streamComplete(request: ProviderRequest, signal?: AbortSignal): AsyncIterable<ProviderResponse> {
     const { system, messages } = this.translateRequest(request);
 
     const body: Record<string, unknown> = {
@@ -78,7 +78,9 @@ export class AnthropicProvider extends BaseProvider {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.timeout),
+      signal: signal
+        ? AbortSignal.any([AbortSignal.timeout(this.timeout), signal])
+        : AbortSignal.timeout(this.timeout),
     });
 
     if (!response.ok) {
@@ -92,6 +94,10 @@ export class AnthropicProvider extends BaseProvider {
     let buffer = "";
 
     while (true) {
+      if (signal?.aborted) {
+        await reader.cancel().catch(() => {});
+        return;
+      }
       const { done, value } = await reader.read();
       if (done) break;
 

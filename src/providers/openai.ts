@@ -49,7 +49,7 @@ export class OpenAIProvider extends BaseProvider {
    * @param request - Provider-formatted request.
    * @returns Async iterator of response chunks.
    */
-  async *streamComplete(request: ProviderRequest): AsyncIterable<ProviderResponse> {
+  async *streamComplete(request: ProviderRequest, signal?: AbortSignal): AsyncIterable<ProviderResponse> {
     const url = `${this.baseUrl}/chat/completions`;
 
     const body: Record<string, unknown> = {
@@ -67,7 +67,9 @@ export class OpenAIProvider extends BaseProvider {
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.timeout),
+      signal: signal
+        ? AbortSignal.any([AbortSignal.timeout(this.timeout), signal])
+        : AbortSignal.timeout(this.timeout),
     });
 
     if (!response.ok) {
@@ -81,6 +83,10 @@ export class OpenAIProvider extends BaseProvider {
     let buffer = "";
 
     while (true) {
+      if (signal?.aborted) {
+        await reader.cancel().catch(() => {});
+        return;
+      }
       const { done, value } = await reader.read();
       if (done) break;
 

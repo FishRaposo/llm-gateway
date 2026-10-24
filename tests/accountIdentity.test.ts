@@ -91,19 +91,19 @@ describe("Canonical account identity", () => {
     expect(ctx?.accountId).toBe("admin");
   });
 
-  it("streamed spend deducts under accountId, never the plaintext key", async () => {
+  it("streamed spend settles under accountId, never the plaintext key", async () => {
     const res = { setHeader: vi.fn(), write: vi.fn().mockReturnValue(true), end: vi.fn() };
-    const deduct = vi.fn().mockResolvedValue(undefined);
+    const settle = vi.fn().mockResolvedValue(undefined);
     const storage = {
       auditLog: { write: vi.fn().mockResolvedValue(undefined) },
       cacheStore: { set: vi.fn(), get: vi.fn().mockResolvedValue(null) },
-      budgetTracker: { deductBudget: deduct },
+      budgetTracker: { settle, release: vi.fn().mockResolvedValue(undefined) },
       apiKeyStore: {},
     } as any;
-    const ctx = makeContext();
+    const ctx = makeContext({ budgetReserved: true });
     await handleStreamingRequest({} as any, res as any, ctx, providerRequest as any, "mock", makeConfig(), decision as any, storage);
-    expect(deduct).toHaveBeenCalled();
-    const [identity] = deduct.mock.calls[0];
+    expect(settle).toHaveBeenCalled();
+    const [identity] = settle.mock.calls[0];
     expect(identity).toBe("record-id-1");
     expect(identity).not.toBe("gw-plaintext-secret");
   });

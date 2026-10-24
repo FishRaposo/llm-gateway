@@ -15,6 +15,13 @@ import { calculateCost } from "../shared/pricing";
 import { handleStreamingRequest } from "./streaming";
 import { recordGatewayError, recordGatewayRequest } from "../metrics";
 
+/** Surfaces lifecycle/accounting failures as metrics + logs instead of silent drops. */
+function reportLifecycleError(stage: "settle" | "release" | "audit", error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(JSON.stringify({ level: "error", message: `Budget/audit ${stage} failure`, error: message }));
+  recordGatewayError(`${stage}_failure`);
+}
+
 export type MiddlewareFunction = (
   context: RequestContext,
   config: GatewayConfig,
@@ -76,6 +83,14 @@ export async function handleRequest(
     }
 
     if (res.locals.cacheHit) {
+      // No provider spend occurred — release the reservation rather than settle.
+      if (context.budgetReserved) {
+        await storage.budgetTracker
+          .release(context.accountId ?? context.apiKeyId ?? context.apiKey, context.requestId)
+          .catch((e) => reportLifecycleError("release", e));
+        context.budgetReserved = false;
+      }
+
       const cachedData = res.locals.cachedResponse as Record<string, unknown>;
       const providerResponse = cachedData as unknown as ProviderResponse;
       const gatewayResponse: GatewayResponse = parseProviderResponse(
@@ -85,10 +100,12 @@ export async function handleRequest(
       );
       gatewayResponse.cacheHit = true;
 
-      const cost = calculateCost(providerResponse.model, providerResponse.usage.promptTokens, providerResponse.usage.completionTokens);
       const duration = Date.now() - startTime;
-      const auditEntry = buildAuditEntry(context, gatewayResponse, duration, "cached", undefined, cost);
-      await storage.auditLog.write(auditEntry).catch(() => {});
+      // Cached responses incur no provider charge; audit cost is 0 and the
+      // costBasis marks the entry as cache-served rather than measured spend.
+      const auditEntry = buildAuditEntry(context, gatewayResponse, duration, "cached", undefined, 0);
+      auditEntry.costBasis = "cached";
+      await storage.auditLog.write(auditEntry).catch((e) => reportLifecycleError("audit", e));
       recordGatewayRequest({
         status: "cached",
         provider: gatewayResponse.provider,
@@ -96,7 +113,7 @@ export async function handleRequest(
         cacheHit: true,
         fallbackUsed: false,
         durationMs: duration,
-        costUsd: cost,
+        costUsd: 0,
       });
 
       res.json(gatewayResponse);
@@ -130,8 +147,21 @@ export async function handleRequest(
       providerResponse.usage.completionTokens
     );
 
-    // Deduct under the canonical account identity the budget was set/read by.
-    await storage.budgetTracker.deductBudget(context.accountId ?? context.apiKeyId ?? context.apiKey, cost).catch(() => {});
+    // Settle the reservation under the canonical account identity. Missing
+    // provider usage settles explicitly as unknown (reservation released,
+    // no fabricated spend recorded).
+    if (context.budgetReserved) {
+      const usageKnown = providerResponse.usage != null;
+      context.usageUnknown = !usageKnown;
+      await storage.budgetTracker
+        .settle(
+          context.accountId ?? context.apiKeyId ?? context.apiKey,
+          context.requestId,
+          usageKnown ? cost : null
+        )
+        .catch((e) => reportLifecycleError("settle", e));
+      context.budgetReserved = false;
+    }
 
     const cacheKey = generateCacheKey(context);
     await storage.cacheStore.set(cacheKey, { response: providerResponse as unknown as Record<string, unknown>, timestamp: Date.now() }).catch(() => {});
@@ -155,7 +185,8 @@ export async function handleRequest(
     );
 
     const auditEntry = buildAuditEntry(context, gatewayResponse, duration, "success", undefined, cost);
-    await storage.auditLog.write(auditEntry).catch(() => {});
+    auditEntry.costBasis = context.usageUnknown ? "unknown" : "measured";
+    await storage.auditLog.write(auditEntry).catch((e) => reportLifecycleError("audit", e));
     recordGatewayRequest({
       status: "success",
       provider: gatewayResponse.provider,
@@ -171,6 +202,15 @@ export async function handleRequest(
     const duration = Date.now() - startTime;
     const message = error instanceof Error ? error.message : "Unknown error";
 
+    // The request died after reservation but before settlement — release it
+    // so failed requests cannot leak budget capacity.
+    if (context?.budgetReserved) {
+      await storage.budgetTracker
+        .release(context.accountId ?? context.apiKeyId ?? context.apiKey, context.requestId)
+        .catch(() => {});
+      context.budgetReserved = false;
+    }
+
     if (!context) {
       recordGatewayError("gateway_error");
       res.status(502).json({
@@ -180,7 +220,7 @@ export async function handleRequest(
     }
 
     const auditEntry = buildAuditEntry(context, null, duration, "error", message);
-    await storage.auditLog.write(auditEntry).catch(() => {});
+    await storage.auditLog.write(auditEntry).catch((e) => reportLifecycleError("audit", e));
     recordGatewayError("gateway_error", "unknown", context?.originalModel ?? "unknown");
     recordGatewayRequest({
       status: "error",
