@@ -1,6 +1,6 @@
 # LLM Gateway
 
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)]() [![Coverage](https://img.shields.io/badge/coverage-88%25-brightgreen)]() [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript)]() [![Express](https://img.shields.io/badge/Express-000?logo=express)]() [![Redis](https://img.shields.io/badge/Redis-DC382D?logo=redis)]()
+[![Tests](https://img.shields.io/badge/tests-177%20backend%20%2B%2041%20UI-brightgreen)]() [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript)]() [![Express](https://img.shields.io/badge/Express-000?logo=express)]() [![Redis](https://img.shields.io/badge/Redis-DC382D?logo=redis)]()
 
 **LLM proxy with routing, guardrails, cost control, and fallback.**
 
@@ -37,9 +37,10 @@ Open http://localhost:3001.
 **Click path:**
 
 1. **Simulate request** → **Provider fallback** — audit log row shows primary failure and secondary provider success.
-2. **Simulate request** → **Budget exceeded** — request stopped; budget meter updates.
-3. **Simulate request** → **Guardrail blocked** — policy violation recorded before the model call.
-4. Scan **Provider health** and **Budgets** — they stay consistent with the new log rows.
+2. **Simulate request** → **Provider outage** — provider health flips to down, an error row lands; **Recover** restores health without rewriting the audit ledger.
+3. **Simulate request** → **Budget exceeded** — request stopped; budget meter updates.
+4. **Simulate request** → **Guardrail blocked** — policy violation recorded before the model call.
+5. Scan **Provider health** and **Budgets** — every panel updates from one reducer state, so they stay consistent with the new log rows. **Reset** restores the fixture baseline.
 
 Against a live gateway:
 
@@ -167,17 +168,19 @@ curl -X POST http://localhost:3000/v1/chat/completions \
 
 ## 8. Failure Handling
 
-- **Provider fallback**: If the primary provider returns an error, the fallback chain tries the next provider automatically
+- **Provider fallback**: If the primary provider returns an error, the fallback chain tries the next provider automatically. In streaming mode fallback is only allowed **before** any content has been emitted; once tokens have flowed the client gets an explicit partial-stream error instead of a disguised second completion.
 - **Circuit breaker**: After repeated failures, a provider is temporarily removed from rotation
 - **Timeout handling**: Configurable per-request timeouts prevent hanging connections
 - **Retry logic**: Transient errors (rate limits, 5xx) are retried with exponential backoff
-- **Graceful degradation**: If Redis is unavailable, the gateway continues without caching
+- **Client aborts**: disconnects propagate an `AbortSignal` into the provider stream so upstream work stops instead of running to completion.
+- **Storage modes**: `STRICT_STORAGE=true` fails readiness when Redis/SQLite are unavailable; the default portable mode degrades budgets/cache/rate-limit to in-memory with explicit labeling, and Redis reconnects after a bounded backoff window.
 
 ## 9. Testing Strategy
 
-The backend suite has **149 vitest tests** across 20 files; the optional dashboard has **27**
-component/unit tests across 3 files. Run `npx vitest run` at the repo root and
-`cd dashboard && npx vitest run` for the UI.
+The backend suite has **177 vitest tests** across 25 files; the optional dashboard has **41**
+component/unit tests across 4 files plus **10 Playwright browser tests** (desktop + mobile,
+including an axe accessibility suite). Run `npx vitest run` at the repo root and
+`cd dashboard && npx vitest run` / `npx playwright test` for the UI.
 
 ```
 tests/
@@ -195,6 +198,11 @@ tests/
 
 - **Unit tests**: each middleware and service tested in isolation with mocks.
 - **Integration tests**: full pipeline with the mock provider (no real API calls).
+- **Concurrency/durability tests**: atomic budget reservation under contention, idempotent
+  settle/release replay, SQLite persistence across restart, Redis outage/reconnect with a
+  fake client (no Docker needed), and account-identity isolation across budget/audit/cache/rate-limit keys.
+- **Stream-semantics tests**: pre-content-only fallback, single `[DONE]` terminator, explicit
+  partial-stream errors, and abort propagation into provider streams.
 - **Error path tests**: provider failures, budget exceeded, policy denied, rate limited.
 - **Golden-output tests**: pricing/cost values are pinned so refactors can't silently move them.
 - **Cross-language tests**: pin the frozen pricing lineage (archived `shared_core.pricing`
@@ -220,9 +228,11 @@ docker compose up -d
 
 ## 11. Roadmap
 
-- [ ] Streaming support with SSE forwarding
-- [ ] Admin dashboard with usage visualization
-- [ ] Prometheus metrics endpoint (`/metrics`)
+- [x] Streaming support with SSE forwarding
+- [x] Admin dashboard with usage visualization
+- [x] Prometheus metrics endpoint (`/metrics`)
+- [x] Atomic budget lifecycle (reserve/settle/release) with idempotent request accounting
+- [x] Per-account identity across budgets, audit, cache, and rate limits
 - [ ] Multi-region deployment support
 - [ ] Webhook notifications for budget alerts
 - [ ] Request/replay debugging tool

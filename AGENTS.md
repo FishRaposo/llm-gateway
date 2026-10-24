@@ -42,7 +42,7 @@ llm-gateway/
 make install      # npm ci
 make dev          # tsx watch src/index.ts
 make build        # tsc -> dist/
-make test         # vitest run  -> 149 passing (backend); dashboard has 27 more
+make test         # vitest run  -> 177 passing (backend); dashboard has 41 unit + 10 e2e
 make lint         # tsc --noEmit + eslint
 make typecheck    # tsc --noEmit
 make docker-up    # redis + gateway
@@ -51,11 +51,14 @@ make demo         # build + print a sample OpenAI-compatible request
 
 ## Current State
 
-**Functional, migrated, green, hardened.** `tsc --noEmit` clean; **149 backend vitest tests
-pass** (20 files), plus **27 dashboard tests** (3 files); `eslint .` clean; `next build` green.
+**Functional, migrated, green, hardened.** `tsc --noEmit` clean; **177 backend vitest tests
+pass** (25 files), plus **41 dashboard unit tests** (4 files) and **10 Playwright browser
+tests** (chromium + mobile, incl. axe); `eslint .` clean; `next build` green.
 Storage degrades gracefully: when the native `better-sqlite3` binding is unavailable (e.g. no
 C++ build tools), the API-key/audit stores fall back to in-memory — the full test suite runs
-without compilation.
+without compilation. `STRICT_STORAGE=true` instead makes Redis/SQLite availability a
+readiness requirement. One canonical `accountId` keys budgets, audit rows, cache entries, and
+rate limits; raw API-key material is never used as an identity and never persisted.
 
 The root vitest suite is scoped to `tests/` via `vitest.config.ts`; the dashboard has its own
 jsdom vitest project under `dashboard/`. `src/shared/pricing.ts` carries the per-1M
