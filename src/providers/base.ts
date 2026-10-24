@@ -25,7 +25,7 @@ export abstract class BaseProvider {
    * @param request - Provider-formatted request.
    * @returns Async iterator of response chunks.
    */
-  abstract streamComplete(request: ProviderRequest): AsyncIterable<ProviderResponse>;
+  abstract streamComplete(request: ProviderRequest, signal?: AbortSignal): AsyncIterable<ProviderResponse>;
 
   /**
    * Checks the health of the provider endpoint.

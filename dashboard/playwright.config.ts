@@ -1,27 +1,34 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Playwright smoke config for the dashboard.
+ * Production-build e2e for the dashboard.
  *
- * This is an OPTIONAL end-to-end smoke layer on top of the vitest component
- * tests. It is intentionally NOT part of the default verification gate
- * (`tsc + vitest + build`) so CI does not need to download browsers. To run it
- * locally:
+ * The app is built and started by the webServer below (`next start` on the
+ * build output). With no gateway backend running the dashboard exercises its
+ * real connected-failure path — SWR fetch errors degrade to the "Gateway
+ * unreachable" fixture banner, which is exactly the offline-preview journey.
+ * The scenario panel then drives the same reducer the unit tests pin.
  *
- *   cd dashboard
- *   npm i -D @playwright/test && npx playwright install chromium
- *   NEXT_PUBLIC_DEMO_MODE=true npm run build && npm start &
- *   npx playwright test
- *
- * `NEXT_PUBLIC_DEMO_MODE=true` makes the dashboard render its built-in demo
- * data with no gateway backend, so the smoke test is fully self-contained.
+ * CI runs the chromium project; mobile-chromium is available locally.
  */
 export default defineConfig({
   testDir: "./e2e",
   timeout: 30_000,
   retries: 0,
+  reporter: process.env.CI ? [["line"], ["html", { open: "never" }]] : "list",
   use: {
     baseURL: process.env.DASHBOARD_URL || "http://localhost:3001",
-    ...devices["Desktop Chrome"],
+    trace: "retain-on-failure",
   },
+  webServer: {
+    // `output: 'export'` builds a static site in dist/ — serve it directly.
+    command: "node scripts/serve-dist.mjs",
+    url: "http://localhost:3001",
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
+  },
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "mobile-chromium", use: { ...devices["Pixel 7"] } },
+  ],
 });

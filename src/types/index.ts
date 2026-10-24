@@ -8,6 +8,11 @@ export interface GatewayConfig {
   databasePath: string;
   redisUrl: string;
   gatewayApiKey: string;
+  /**
+   * When true, the budget tracker requires Redis and fails closed rather than
+   * silently degrading to per-process memory (divergent accounting).
+   */
+  strictStorage: boolean;
   providers: Record<string, ProviderConfig>;
   routing: RoutingConfig;
   policy: PolicyConfig;
@@ -58,6 +63,8 @@ export interface AuditEntry {
   timestamp: string;
   apiKey: string;
   apiKeyName: string;
+  /** Canonical account identity (key record id) for correlating with budgets. */
+  accountId?: string;
   model: string;
   provider: string;
   inputTokens: number;
@@ -69,6 +76,11 @@ export interface AuditEntry {
   routingDecision?: string;
   cacheHit: boolean;
   fallbackUsed: boolean;
+  /**
+   * How costUsd was determined: measured provider usage, an estimate,
+   * explicitly unknown provider usage, or a zero-charge cache hit.
+   */
+  costBasis?: "measured" | "estimated" | "unknown" | "cached";
 }
 
 export interface LogFilters {

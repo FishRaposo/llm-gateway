@@ -1,5 +1,6 @@
 /** Persistent API key storage backed by SQLite with bcrypt hashing and in-memory fallback. */
 
+import { createHash } from "crypto";
 import { v4 as uuidv4 } from "uuid";
 
 export interface ApiKeyRecord {
@@ -47,6 +48,7 @@ export class ApiKeyStore {
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
           key_hash TEXT NOT NULL UNIQUE,
+          key_fingerprint TEXT,
           permissions TEXT NOT NULL DEFAULT 'chat',
           budget_usd REAL NOT NULL DEFAULT 100,
           allowed_models TEXT NOT NULL DEFAULT '*',
@@ -54,6 +56,12 @@ export class ApiKeyStore {
           created_at TEXT NOT NULL
         )
       `);
+      // Additive migration for databases created before key_fingerprint existed.
+      const cols = db.prepare("PRAGMA table_info(api_keys)").all() as Array<{ name: string }>;
+      if (cols.length > 0 && !cols.some((c) => c.name === "key_fingerprint")) {
+        db.exec("ALTER TABLE api_keys ADD COLUMN key_fingerprint TEXT");
+      }
+      db.exec("CREATE INDEX IF NOT EXISTS idx_api_keys_fingerprint ON api_keys(key_fingerprint)");
     } catch {
       console.warn("[ApiKeyStore] SQLite unavailable, using in-memory fallback");
     }
@@ -65,7 +73,8 @@ export class ApiKeyStore {
   }
 
   async create(input: ApiKeyCreateInput): Promise<{ apiKey: string; record: ApiKeyRecord }> {
-    const apiKey = `gw-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const { randomBytes } = await import("crypto");
+    const apiKey = `gw-${randomBytes(24).toString("hex")}`;
     const record: ApiKeyRecord = {
       id: uuidv4(),
       name: input.name || "unnamed",
@@ -80,12 +89,13 @@ export class ApiKeyStore {
     const db = await this.getDb();
     if (db) {
       db.prepare(
-        `INSERT INTO api_keys (id, name, key_hash, permissions, budget_usd, allowed_models, expires_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO api_keys (id, name, key_hash, key_fingerprint, permissions, budget_usd, allowed_models, expires_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         record.id,
         record.name,
         record.keyHash,
+        this._fingerprint(apiKey),
         JSON.stringify(record.permissions),
         record.budgetUsd,
         JSON.stringify(record.allowedModels),
@@ -94,7 +104,7 @@ export class ApiKeyStore {
       );
     } else {
       this.memoryFallback.set(record.id, record);
-      this.memoryHashFallback.set(apiKey, record.keyHash);
+      this.memoryHashFallback.set(this._fingerprint(apiKey), record.keyHash);
     }
 
     return { apiKey, record };
@@ -103,11 +113,30 @@ export class ApiKeyStore {
   async validate(apiKey: string): Promise<ApiKeyValidationResult> {
     const db = await this.getDb();
     if (db) {
-      const rows = db.prepare("SELECT * FROM api_keys").all() as Array<Record<string, unknown>>;
-      for (const row of rows) {
-        const keyHash = row.key_hash as string;
-        if (await this._compare(apiKey, keyHash)) {
-          const record = this._deserialize(row);
+      // O(1) path: the sha256 fingerprint of a high-entropy generated key is a
+      // safe lookup index; bcrypt is then compared against exactly one row.
+      const fingerprint = this._fingerprint(apiKey);
+      const row = db.prepare("SELECT * FROM api_keys WHERE key_fingerprint = ?").get(fingerprint) as
+        | Record<string, unknown>
+        | undefined;
+      if (row && (await this._compare(apiKey, row.key_hash as string))) {
+        const record = this._deserialize(row);
+        if (record.expiresAt && new Date(record.expiresAt) < new Date()) {
+          return { valid: false };
+        }
+        return { valid: true, record };
+      }
+      if (row) return { valid: false };
+
+      // Self-healing legacy path: rows written before key_fingerprint existed
+      // are scanned once, then backfilled so subsequent lookups are indexed.
+      const legacyRows = db
+        .prepare("SELECT * FROM api_keys WHERE key_fingerprint IS NULL")
+        .all() as Array<Record<string, unknown>>;
+      for (const legacy of legacyRows) {
+        if (await this._compare(apiKey, legacy.key_hash as string)) {
+          db.prepare("UPDATE api_keys SET key_fingerprint = ? WHERE id = ?").run(fingerprint, legacy.id);
+          const record = this._deserialize(legacy);
           if (record.expiresAt && new Date(record.expiresAt) < new Date()) {
             return { valid: false };
           }
@@ -117,16 +146,17 @@ export class ApiKeyStore {
       return { valid: false };
     }
 
-    // In-memory fallback: compare stored hash against key
-    for (const [storedKey, storedHash] of this.memoryHashFallback.entries()) {
-      if (storedKey === apiKey) {
-        const record = Array.from(this.memoryFallback.values()).find((r) => r.keyHash === storedHash);
-        if (record) {
-          if (record.expiresAt && new Date(record.expiresAt) < new Date()) {
-            return { valid: false };
-          }
-          return { valid: true, record };
+    // In-memory fallback: fingerprint-indexed, so the plaintext key is never
+    // stored in the map.
+    const fp = this._fingerprint(apiKey);
+    const storedHash = this.memoryHashFallback.get(fp);
+    if (storedHash) {
+      const record = Array.from(this.memoryFallback.values()).find((r) => r.keyHash === storedHash);
+      if (record) {
+        if (record.expiresAt && new Date(record.expiresAt) < new Date()) {
+          return { valid: false };
         }
+        return { valid: true, record };
       }
     }
     return { valid: false };
@@ -157,6 +187,20 @@ export class ApiKeyStore {
       }
     }
     return true;
+  }
+
+  /**
+   * Closes the SQLite connection, if open. Safe to call on the memory fallback.
+   */
+  close(): void {
+    if (this.db) {
+      this.db.close();
+      this.db = null;
+    }
+  }
+
+  private _fingerprint(plain: string): string {
+    return createHash("sha256").update(plain).digest("hex");
   }
 
   private async _hash(plain: string): Promise<string> {

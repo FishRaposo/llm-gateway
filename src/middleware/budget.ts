@@ -32,20 +32,24 @@ export function createBudgetMiddleware(config: GatewayConfig, budgetTracker: Bud
       throw error;
     }
 
-    // Per-key budget is tracked under the stable record id (set at key
-    // creation), not the plaintext key. Fall back to the plaintext key only
-    // when no id is available (e.g. bootstrap admin key).
-    const budgetId = context.apiKeyId ?? context.apiKey;
-    const remaining = await budgetTracker.getRemainingBudget(budgetId);
+    // Per-key budget is tracked under the canonical account identity (key
+    // record id), never the plaintext credential. The plaintext fallback only
+    // covers paths that bypassed auth entirely (direct handler tests).
+    const budgetId = context.accountId ?? context.apiKeyId ?? context.apiKey;
 
-    if (remaining < estimatedCost) {
+    // Atomic admission: reserve the estimated cost under this requestId so
+    // concurrent requests cannot race past the limit. Idempotent — a replayed
+    // requestId observes the existing reservation rather than double-charging.
+    const reservation = await budgetTracker.reserve(budgetId, context.requestId, estimatedCost);
+    if (!reservation.allowed) {
       const error = new Error(
-        `Budget exceeded. Remaining: $${remaining.toFixed(4)}, estimated: $${estimatedCost.toFixed(4)}`
+        `Budget exceeded. Remaining: $${reservation.remaining.toFixed(4)}, estimated: $${estimatedCost.toFixed(4)}`
       ) as Error & { statusCode: number; code: string };
       error.statusCode = 402;
       error.code = "budget_exceeded";
       throw error;
     }
+    context.budgetReserved = true;
 
     return context;
   };

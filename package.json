@@ -1,6 +1,6 @@
 {
   "name": "llm-gateway",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A lightweight LLM operations gateway for routing, cost control, fallback, and auditability",
   "main": "dist/index.js",
   "scripts": {
@@ -9,10 +9,11 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit && eslint .",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "benchmark:portfolio": "tsx scripts/benchmark_portfolio_gateway.ts"
   },
   "dependencies": {
-    "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^13.0.3",
     "cors": "^2.8.5",
@@ -25,20 +26,20 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/bcrypt": "^6.0.0",
-    "@types/bcryptjs": "^3.0.0",
     "@types/better-sqlite3": "^9.6.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.6",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^26.2.0",
-    "@types/uuid": "^11.0.0",
     "@typescript-eslint/eslint-plugin": "^8.67.0",
-    "@typescript-eslint/parser": "^8.60.0",
+    "@typescript-eslint/parser": "^8.67.0",
     "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^10.8.1",
     "tsx": "^4.23.12",
-    "typescript": "^7.0.2",
+    "typescript": "~6.0.3",
     "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

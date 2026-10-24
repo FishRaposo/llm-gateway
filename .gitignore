@@ -13,3 +13,5 @@ Thumbs.db
 coverage/
 *.tsbuildinfo
 .next/
+test-results/
+playwright-report/

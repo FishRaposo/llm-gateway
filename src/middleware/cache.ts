@@ -44,6 +44,9 @@ export function createCacheMiddleware(
  */
 export function generateCacheKey(request: RequestContext): string {
   const content = JSON.stringify({
+    // Account-scoped: two keys must never share a cached completion. Falls
+    // back to the credential hash path only when auth did not run (tests).
+    account: request.accountId ?? request.apiKeyId ?? hashString(request.apiKey),
     model: request.originalModel,
     messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
     temperature: request.temperature,

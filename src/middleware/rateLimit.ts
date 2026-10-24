@@ -67,8 +67,11 @@ export function createRateLimitMiddleware(_config: GatewayConfig): MiddlewareFun
     context: RequestContext,
     _config: GatewayConfig
   ): Promise<RequestContext | null> => {
-    const keyConfig = getKeyRateLimitConfig(context.apiKey);
-    const allowed = await checkRateLimit(context.apiKey, keyConfig.limitRpm, keyConfig.windowMs);
+    // Rate-limit identity is the canonical account id — never the plaintext
+    // credential, which must not appear in the Redis keyspace.
+    const identity = context.accountId ?? context.apiKeyId ?? context.apiKey;
+    const keyConfig = getKeyRateLimitConfig(identity);
+    const allowed = await checkRateLimit(identity, keyConfig.limitRpm, keyConfig.windowMs);
 
     if (!allowed) {
       const error = new Error("Rate limit exceeded") as Error & { statusCode: number; code: string };
@@ -151,7 +154,7 @@ export async function getRateLimitStatus(
       const windowStart = now - windowMs;
       await client.zremrangebyscore(key, 0, windowStart);
       const count = (await client.zcard(key)) as number;
-      const oldest = await client.zrange(key, 0, 0, "WITHSCORES");
+      const oldest = await client.zrange(key, "0", "0", "WITHSCORES");
       let resetMs = windowMs;
       if (oldest && oldest.length >= 2) {
         const firstTs = parseInt(oldest[1], 10);

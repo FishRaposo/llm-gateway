@@ -45,8 +45,16 @@ export function parseRequest(req: Request): RequestContext {
     ? authHeader.slice(7)
     : "";
 
+  // Client-supplied idempotency identity: retries of the same logical request
+  // reuse the same requestId so budget reserve/settle stays exactly-once.
+  const clientRequestId =
+    (req.headers["idempotency-key"] as string | undefined) ??
+    (req.headers["x-request-id"] as string | undefined);
+  const requestId =
+    clientRequestId && clientRequestId.length <= 128 ? clientRequestId : uuidv4();
+
   return {
-    requestId: uuidv4(),
+    requestId,
     apiKey,
     apiKeyName: "default",
     permissions: [],

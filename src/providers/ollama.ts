@@ -38,7 +38,7 @@ export class OllamaProvider extends BaseProvider {
     return this.normalizeResponse(data, request.model);
   }
 
-  async *streamComplete(request: ProviderRequest): AsyncIterable<ProviderResponse> {
+  async *streamComplete(request: ProviderRequest, signal?: AbortSignal): AsyncIterable<ProviderResponse> {
     const messages = request.messages.map((m) => ({
       role: m.role,
       content: m.content,
@@ -58,6 +58,7 @@ export class OllamaProvider extends BaseProvider {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: signal ? AbortSignal.any([AbortSignal.timeout(this.timeout), signal]) : AbortSignal.timeout(this.timeout),
     });
 
     if (!response.ok) {
@@ -74,6 +75,10 @@ export class OllamaProvider extends BaseProvider {
     let buffer = "";
 
     while (true) {
+      if (signal?.aborted) {
+        await reader.cancel().catch(() => {});
+        return;
+      }
       const { done, value } = await reader.read();
       if (done) break;
 
