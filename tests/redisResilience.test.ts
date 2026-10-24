@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /** Redis outage/recovery behavior via a controllable fake ioredis. */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
