@@ -1,19 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useReducer, useState } from "react";
 import useSWR from "swr";
 import {
   type AuditLog,
   type BudgetInfo,
   type ProviderHealth,
   type SimulationScenario,
+  type ScenarioAction,
   summarize,
   normalizeHealth,
   latencyPolyline,
   budgetUsedPct,
-  createSimulatedLog,
-  applyBudgetSimulation,
-  applyHealthSimulation,
+  scenarioReducer,
+  initialScenarioState,
   SIMULATION_LABELS,
   DEMO_LOGS,
   DEMO_BUDGETS,
@@ -128,11 +128,12 @@ function DemoBanner({ forceDemo }: { forceDemo: boolean }) {
 
 const SIMULATION_SCENARIOS: SimulationScenario[] = [
   "provider_fallback",
+  "provider_outage",
   "budget_exceeded",
   "guardrail_blocked",
 ];
 
-function SimulateRequestPanel({ onSimulate }: { onSimulate: (scenario: SimulationScenario) => void }) {
+function SimulateRequestPanel({ dispatch }: { dispatch: (action: ScenarioAction) => void }) {
   return (
     <section
       data-testid="simulate-request-panel"
@@ -156,7 +157,7 @@ function SimulateRequestPanel({ onSimulate }: { onSimulate: (scenario: Simulatio
             key={scenario}
             type="button"
             data-testid={`simulate-${scenario}`}
-            onClick={() => onSimulate(scenario)}
+            onClick={() => dispatch({ type: "simulate", scenario })}
             style={{
               background: "rgba(6, 182, 212, 0.1)",
               border: "1px solid rgba(6, 182, 212, 0.25)",
@@ -172,15 +173,47 @@ function SimulateRequestPanel({ onSimulate }: { onSimulate: (scenario: Simulatio
             {SIMULATION_LABELS[scenario]}
           </button>
         ))}
+        <button
+          type="button"
+          data-testid="simulate-recover"
+          onClick={() => dispatch({ type: "recover" })}
+          style={{
+            background: "rgba(34, 197, 94, 0.1)",
+            border: "1px solid rgba(34, 197, 94, 0.25)",
+            borderRadius: 10,
+            padding: "10px 16px",
+            color: "#4ade80",
+            fontSize: 13,
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          Recover
+        </button>
+        <button
+          type="button"
+          data-testid="simulate-reset"
+          onClick={() => dispatch({ type: "reset" })}
+          style={{
+            background: "rgba(148, 163, 184, 0.08)",
+            border: "1px solid rgba(148, 163, 184, 0.2)",
+            borderRadius: 10,
+            padding: "10px 16px",
+            color: "#94a3b8",
+            fontSize: 13,
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          Reset
+        </button>
       </div>
     </section>
   );
 }
 
 export function DashboardView() {
-  const [simulatedLogs, setSimulatedLogs] = useState<AuditLog[]>([]);
-  const [simulatedBudgets, setSimulatedBudgets] = useState<BudgetInfo[] | null>(null);
-  const [simulatedHealth, setSimulatedHealth] = useState<Record<string, ProviderHealth> | null>(null);
+  const [scenario, dispatch] = useReducer(scenarioReducer, undefined, initialScenarioState);
 
   const { data: logsData, error: logsError } = useSWR<{ logs: AuditLog[] }>(
     `${API_BASE}/admin/logs?limit=50`,
@@ -204,29 +237,18 @@ export function DashboardView() {
   const demoMode = forceDemo || Boolean(logsError);
 
   const baseLogs = demoMode ? DEMO_LOGS : Array.isArray(logsData?.logs) ? logsData!.logs : [];
-  const logs = demoMode ? [...simulatedLogs, ...baseLogs] : baseLogs;
+  const logs = demoMode ? [...scenario.logs, ...baseLogs] : baseLogs;
 
   const baseBudgets = demoMode
     ? DEMO_BUDGETS
     : Array.isArray(budgetsData?.budgets)
       ? budgetsData!.budgets
       : [];
-  const budgets = demoMode && simulatedBudgets ? simulatedBudgets : baseBudgets;
+  const budgets = demoMode ? scenario.budgets : baseBudgets;
 
   const baseHealth = demoMode ? DEMO_HEALTH : healthData?.providers;
-  const healthSource = demoMode && simulatedHealth ? simulatedHealth : baseHealth;
+  const healthSource = demoMode ? scenario.health : baseHealth;
   const health = normalizeHealth(healthSource);
-
-  const handleSimulate = (scenario: SimulationScenario) => {
-    const newLog = createSimulatedLog(scenario, simulatedLogs.length);
-    setSimulatedLogs((prev) => [newLog, ...prev]);
-    setSimulatedBudgets((prev) =>
-      applyBudgetSimulation(prev ?? DEMO_BUDGETS, scenario, newLog)
-    );
-    setSimulatedHealth((prev) =>
-      applyHealthSimulation(prev ?? DEMO_HEALTH, scenario)
-    );
-  };
 
   const { totalCost, avgLatency, blockedCount, requestCount } = summarize(logs);
 
@@ -287,7 +309,7 @@ export function DashboardView() {
           }
         `}</style>
 
-        {demoMode && <SimulateRequestPanel onSimulate={handleSimulate} />}
+        {demoMode && <SimulateRequestPanel dispatch={dispatch} />}
 
         {/* Telemetry Metric Cards */}
         <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 20, marginBottom: 40 }}>
@@ -390,7 +412,7 @@ export function DashboardView() {
         <section style={{ background: "linear-gradient(135deg, rgba(30, 41, 59, 0.3) 0%, rgba(15, 23, 42, 0.5) 100%)", border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: 16, padding: 24, marginBottom: 40, boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.3)", backdropFilter: "blur(12px)" }}>
           <h2 style={{ margin: "0 0 20px", fontSize: 18, fontWeight: 800 }}>Audit Logs buffer</h2>
 
-          <div style={{ overflowX: "auto" }}>
+          <div style={{ overflowX: "auto" }} tabIndex={0} role="region" aria-label="Audit log entries">
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, textAlign: "left" }}>
               <thead>
                 <tr style={{ color: "#64748b", borderBottom: "1px solid rgba(255, 255, 255, 0.08)" }}>
@@ -412,7 +434,7 @@ export function DashboardView() {
                     const isPolicyBlocked = d.status === "policy_denied" || d.status === "budget_exceeded" || d.status === "error";
 
                     return (
-                      <tr key={d.id} style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.03)", transition: "background 0.2s" }} className="log-row">
+                      <tr key={d.id} data-testid={`audit-row-${d.id}`} style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.03)", transition: "background 0.2s" }} className="log-row">
                         <td style={{ padding: "14px 16px", fontWeight: 650, color: "#f8fafc" }}>
                           {d.model}
                         </td>

@@ -133,11 +133,12 @@ export const DEMO_HEALTH: Record<string, ProviderHealth> = {
 
 // --- Interactive demo simulations ------------------------------------------
 
-export type SimulationScenario = "provider_fallback" | "budget_exceeded" | "guardrail_blocked";
+export type SimulationScenario = "provider_fallback" | "provider_outage" | "budget_exceeded" | "guardrail_blocked";
 
 /** Human-readable labels for the simulate-request panel. */
 export const SIMULATION_LABELS: Record<SimulationScenario, string> = {
   provider_fallback: "Provider fallback",
+  provider_outage: "Provider outage",
   budget_exceeded: "Budget exceeded",
   guardrail_blocked: "Guardrail blocked",
 };
@@ -174,6 +175,18 @@ export function createSimulatedLog(scenario: SimulationScenario, index: number):
         status: "budget_exceeded",
         fallbackUsed: false,
         routingDecision: "cost_optimize",
+      };
+    case "provider_outage":
+      return {
+        id,
+        timestamp,
+        model: "gpt-4o",
+        provider: "openai",
+        costUsd: 0,
+        latencyMs: 30012,
+        status: "error",
+        fallbackUsed: false,
+        routingDecision: "circuit_open",
       };
     case "guardrail_blocked":
       return {
@@ -223,10 +236,22 @@ export function applyHealthSimulation(
   health: Record<string, ProviderHealth>,
   scenario: SimulationScenario
 ): Record<string, ProviderHealth> {
-  if (scenario !== "provider_fallback") return health;
-
   const openai = health.openai;
   if (!openai) return health;
+
+  if (scenario === "provider_outage") {
+    return {
+      ...health,
+      openai: {
+        ...openai,
+        status: "down",
+        errorRate: 1,
+        lastCheck: new Date().toISOString(),
+      },
+    };
+  }
+
+  if (scenario !== "provider_fallback") return health;
 
   return {
     ...health,
@@ -238,4 +263,68 @@ export function applyHealthSimulation(
       lastCheck: new Date().toISOString(),
     },
   };
+}
+
+// --- Scenario state machine --------------------------------------------------
+
+/**
+ * One scenario state owns everything the demo simulation mutates: the audit
+ * rows, budget cards, and provider health all derive from this single object.
+ * Connected (live API) data never enters the reducer — mode separation is
+ * enforced by the caller rendering connected data only when demoMode is off.
+ */
+export interface ScenarioState {
+  logs: AuditLog[];
+  budgets: BudgetInfo[];
+  health: Record<string, ProviderHealth>;
+  /** Number of simulated requests applied — indexes deterministic ids. */
+  simCount: number;
+}
+
+export type ScenarioAction =
+  | { type: "simulate"; scenario: SimulationScenario }
+  | { type: "burst"; scenario: SimulationScenario; count: number }
+  | { type: "recover" }
+  | { type: "reset"; base?: Partial<Pick<ScenarioState, "budgets" | "health">> };
+
+export function initialScenarioState(): ScenarioState {
+  return { logs: [], budgets: DEMO_BUDGETS, health: DEMO_HEALTH, simCount: 0 };
+}
+
+export function scenarioReducer(state: ScenarioState, action: ScenarioAction): ScenarioState {
+  switch (action.type) {
+    case "simulate": {
+      const log = createSimulatedLog(action.scenario, state.simCount);
+      return {
+        logs: [log, ...state.logs],
+        budgets: applyBudgetSimulation(state.budgets, action.scenario, log),
+        health: applyHealthSimulation(state.health, action.scenario),
+        simCount: state.simCount + 1,
+      };
+    }
+    case "burst": {
+      let next = state;
+      const count = Math.max(0, Math.min(action.count, 50));
+      for (let i = 0; i < count; i++) {
+        next = scenarioReducer(next, { type: "simulate", scenario: action.scenario });
+      }
+      return next;
+    }
+    case "recover": {
+      const health = Object.fromEntries(
+        Object.entries(state.health).map(([name, info]) => [
+          name,
+          { ...info, status: "healthy" as const, errorRate: 0, lastCheck: new Date().toISOString() },
+        ])
+      );
+      return { ...state, health };
+    }
+    case "reset":
+      return {
+        logs: [],
+        budgets: action.base?.budgets ?? DEMO_BUDGETS,
+        health: action.base?.health ?? DEMO_HEALTH,
+        simCount: 0,
+      };
+  }
 }
