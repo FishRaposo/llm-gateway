@@ -25,6 +25,7 @@ export function createAuthMiddleware(config: GatewayConfig, store: ApiKeyStore):
     if (context.apiKey === config.gatewayApiKey) {
       context.apiKeyName = "admin";
       context.apiKeyId = "admin";
+      context.accountId = "admin";
       context.permissions = ["*"];
       return context;
     }
@@ -37,6 +38,7 @@ export function createAuthMiddleware(config: GatewayConfig, store: ApiKeyStore):
 
     context.apiKeyName = result.record.name;
     context.apiKeyId = result.record.id;
+    context.accountId = result.record.id;
     context.permissions = result.record.permissions;
     return context;
   };

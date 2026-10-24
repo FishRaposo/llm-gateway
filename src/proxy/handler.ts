@@ -130,8 +130,8 @@ export async function handleRequest(
       providerResponse.usage.completionTokens
     );
 
-    // Deduct under the same identifier the budget was set/read by (record id).
-    await storage.budgetTracker.deductBudget(context.apiKeyId ?? context.apiKey, cost).catch(() => {});
+    // Deduct under the canonical account identity the budget was set/read by.
+    await storage.budgetTracker.deductBudget(context.accountId ?? context.apiKeyId ?? context.apiKey, cost).catch(() => {});
 
     const cacheKey = generateCacheKey(context);
     await storage.cacheStore.set(cacheKey, { response: providerResponse as unknown as Record<string, unknown>, timestamp: Date.now() }).catch(() => {});
@@ -221,6 +221,7 @@ function buildAuditEntry(
     timestamp: new Date().toISOString(),
     apiKey: context.apiKey,
     apiKeyName: context.apiKeyName,
+    accountId: context.accountId ?? context.apiKeyId,
     model: response?.model ?? context.originalModel,
     provider: response?.provider ?? "unknown",
     inputTokens: response?.usage?.promptTokens ?? 0,

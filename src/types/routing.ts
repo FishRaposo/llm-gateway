@@ -6,6 +6,12 @@ export interface RequestContext {
   apiKeyName: string;
   /** Stable record id used as the budget identifier (deduct/read/limit). */
   apiKeyId?: string;
+  /**
+   * Canonical account identity for accounting, cache, rate-limit, and audit
+   * correlation. Set by auth to the key record id (or "admin"); never the
+   * plaintext credential.
+   */
+  accountId?: string;
   permissions: string[];
   originalModel: string;
   messages: ChatMessage[];

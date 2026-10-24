@@ -64,7 +64,7 @@ export async function handleStreamingRequest(
     const duration = Date.now() - startTime;
     const cost = calculateCost(finalModel, inputTokens, outputTokens);
 
-    await storage.budgetTracker.deductBudget(context.apiKey, cost).catch(() => {});
+    await storage.budgetTracker.deductBudget(context.accountId ?? context.apiKeyId ?? context.apiKey, cost).catch(() => {});
     await writeAuditEntry(storage, context, finalModel, finalProvider, inputTokens, outputTokens, cost, duration, "success", fallbackUsed, false);
   } catch (error) {
     try {
@@ -89,7 +89,7 @@ export async function handleStreamingRequest(
       const duration = Date.now() - startTime;
       const cost = calculateCost(finalModel, inputTokens, outputTokens);
 
-      await storage.budgetTracker.deductBudget(context.apiKey, cost).catch(() => {});
+      await storage.budgetTracker.deductBudget(context.accountId ?? context.apiKeyId ?? context.apiKey, cost).catch(() => {});
       await writeAuditEntry(storage, context, finalModel, finalProvider, inputTokens, outputTokens, cost, duration, "success", fallbackUsed, false);
     } catch (fallbackError) {
       const message = fallbackError instanceof Error ? fallbackError.message : "Stream fallback error";
@@ -124,6 +124,7 @@ async function writeAuditEntry(
     timestamp: new Date().toISOString(),
     apiKey: context.apiKey,
     apiKeyName: context.apiKeyName,
+    accountId: context.accountId ?? context.apiKeyId,
     model,
     provider,
     inputTokens,

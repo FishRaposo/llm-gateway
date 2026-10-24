@@ -58,6 +58,8 @@ export interface AuditEntry {
   timestamp: string;
   apiKey: string;
   apiKeyName: string;
+  /** Canonical account identity (key record id) for correlating with budgets. */
+  accountId?: string;
   model: string;
   provider: string;
   inputTokens: number;

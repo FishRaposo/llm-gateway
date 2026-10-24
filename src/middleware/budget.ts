@@ -32,10 +32,10 @@ export function createBudgetMiddleware(config: GatewayConfig, budgetTracker: Bud
       throw error;
     }
 
-    // Per-key budget is tracked under the stable record id (set at key
-    // creation), not the plaintext key. Fall back to the plaintext key only
-    // when no id is available (e.g. bootstrap admin key).
-    const budgetId = context.apiKeyId ?? context.apiKey;
+    // Per-key budget is tracked under the canonical account identity (key
+    // record id), never the plaintext credential. The plaintext fallback only
+    // covers paths that bypassed auth entirely (direct handler tests).
+    const budgetId = context.accountId ?? context.apiKeyId ?? context.apiKey;
     const remaining = await budgetTracker.getRemainingBudget(budgetId);
 
     if (remaining < estimatedCost) {
