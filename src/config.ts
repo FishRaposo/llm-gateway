@@ -24,6 +24,7 @@ const GatewayConfigSchema = z.object({
   databasePath: z.string().default("./data/gateway.db"),
   redisUrl: z.string().default("redis://localhost:6379"),
   gatewayApiKey: z.string().default("gateway-admin-key"),
+  strictStorage: z.boolean().default(false),
   providers: z.record(z.string(), ProviderConfigSchema).default({}),
   routing: z.any().default({ default: { provider: "openai", model: "gpt-4o-mini" }, rules: [], fallback: { enabled: true, maxRetries: 3, circuitBreaker: { failureThreshold: 5, resetTimeoutMs: 60000 } } }),
   policy: z.any().default({ enabled: false, evalOrder: [], rules: [] }),
@@ -129,6 +130,7 @@ export function loadConfig(): GatewayConfig {
     databasePath: process.env.DATABASE_PATH || "./data/gateway.db",
     redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
     gatewayApiKey: process.env.GATEWAY_API_KEY || "gateway-admin-key",
+    strictStorage: process.env.STRICT_STORAGE === "true",
     providers,
     routing: routing ?? {
       default: { provider: "openai", model: "gpt-4o-mini" },

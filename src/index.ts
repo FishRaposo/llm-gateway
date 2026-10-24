@@ -2,6 +2,8 @@
 
 import express from "express";
 import cors from "cors";
+import { readFileSync } from "fs";
+import { join } from "path";
 import { getConfig } from "./config";
 import { handleRequest } from "./proxy/handler";
 import { createAdminRouter } from "./admin/routes";
@@ -26,7 +28,11 @@ import type { GatewayConfig } from "./types";
 function initializeStorage(config: GatewayConfig) {
   const auditLog = new AuditLogStorage(config.databasePath);
   const cacheStore = new CacheStore(config.redisUrl);
-  const budgetTracker = new BudgetTracker(config.redisUrl, config.budgets.globalLimitUsd);
+  const budgetTracker = new BudgetTracker(
+    config.redisUrl,
+    config.budgets.globalLimitUsd,
+    config.strictStorage
+  );
   const apiKeyStore = new ApiKeyStore(config.databasePath);
 
   return { auditLog, cacheStore, budgetTracker, apiKeyStore };
@@ -53,20 +59,32 @@ function buildMiddlewareChain(storage: ReturnType<typeof initializeStorage>, con
  * Creates and configures the Express application.
  * @returns Configured Express app instance.
  */
-export function createApp(): express.Application {
-  const config = getConfig();
+export function createApp(config = getConfig()): express.Application {
   const storage = initializeStorage(config);
   const middlewareChain = buildMiddlewareChain(storage, config);
 
   initRateLimitRedis(config.redisUrl).catch(() => {});
 
   const app = express();
+  app.locals.storage = storage;
+  app.locals.gatewayConfig = config;
 
   app.use(cors());
   app.use(express.json({ limit: "10mb" }));
 
   app.get("/health", (_req: express.Request, res: express.Response) => {
-    res.json({ status: "ok", version: "1.0.0" });
+    res.json({
+      status: "ok",
+      version: GATEWAY_VERSION,
+      storage: {
+        audit: "sqlite",
+        apiKeys: "sqlite",
+        budgets: config.strictStorage ? "redis (strict)" : "redis-or-memory",
+        cache: "redis-or-memory",
+      },
+      budgetsEnabled: config.budgets.enabled,
+      strictStorage: config.strictStorage,
+    });
   });
 
   app.get("/metrics", (_req: express.Request, res: express.Response) => {
@@ -94,11 +112,23 @@ export function createApp(): express.Application {
   return app;
 }
 
-const app = createApp();
-const config = getConfig();
-const storage = initializeStorage(config);
+/** Resolved once from package.json so /health and logs share one version source. */
+export const GATEWAY_VERSION: string = (JSON.parse(
+  readFileSync(join(__dirname, "..", "package.json"), "utf-8")
+) as { version: string }).version;
 
-const server = app.listen(config.port, () => {
+/* istanbul ignore next -- module entrypoint guard */
+const isMain = process.argv[1] != null &&
+  (process.argv[1].endsWith("index.js") || process.argv[1].endsWith("index.ts"));
+
+let server: ReturnType<express.Application["listen"]> | undefined;
+let appStorage: ReturnType<typeof initializeStorage> | undefined;
+const app = createApp();
+
+if (isMain) {
+  const config = getConfig();
+  appStorage = app.locals.storage as ReturnType<typeof initializeStorage>;
+  server = app.listen(config.port, () => {
   console.log(JSON.stringify({
     level: "info",
     message: "Gateway started",
@@ -106,7 +136,8 @@ const server = app.listen(config.port, () => {
     defaultModel: config.defaultModel,
     providers: Object.keys(config.providers),
   }));
-});
+  });
+}
 
 /**
  * Gracefully shuts down the gateway server.
@@ -117,7 +148,7 @@ async function shutdown(signal: string): Promise<void> {
   console.log(JSON.stringify({ level: "info", message: "Shutdown initiated", signal }));
 
   // Stop accepting new connections
-  server.close(() => {
+  server?.close(() => {
     console.log(JSON.stringify({ level: "info", message: "HTTP server closed" }));
   });
 
@@ -127,12 +158,12 @@ async function shutdown(signal: string): Promise<void> {
 
   // Close storage backends
   try {
-    await storage.cacheStore.close();
+    await appStorage?.cacheStore.close();
   } catch {
     // ignore
   }
   try {
-    await storage.budgetTracker.close();
+    await appStorage?.budgetTracker.close();
   } catch {
     // ignore
   }

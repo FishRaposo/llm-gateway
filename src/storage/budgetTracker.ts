@@ -105,6 +105,10 @@ export class BudgetTracker {
   private redisUrl: string;
   private client: import("ioredis").Redis | null = null;
   private clientFailed = false;
+  /** Next timestamp at which a Redis retry is permitted (outage backoff). */
+  private retryAt = 0;
+  private connectPromise: Promise<import("ioredis").Redis | null> | null = null;
+  private static readonly RETRY_BACKOFF_MS = 500;
   private globalLimitUsd: number;
   /**
    * When true, Redis is mandatory: reserve/settle/release reject instead of
@@ -130,12 +134,22 @@ export class BudgetTracker {
    */
   private async getClient(): Promise<import("ioredis").Redis | null> {
     if (this.client) return this.client;
-    if (this.clientFailed) {
-      // Retry connection each call — recovery is required for the
-      // outage/reconnect acceptance path.
-      this.clientFailed = false;
-    }
+    // Bounded retry: after a failure, wait out the backoff window instead of
+    // paying a connect attempt on every operation, while still recovering
+    // automatically when Redis returns.
+    if (this.clientFailed && Date.now() < this.retryAt) return null;
+    // Share one in-flight connect attempt across concurrent callers.
+    if (this.connectPromise) return this.connectPromise;
 
+    this.connectPromise = this.attemptConnect();
+    try {
+      return await this.connectPromise;
+    } finally {
+      this.connectPromise = null;
+    }
+  }
+
+  private async attemptConnect(): Promise<import("ioredis").Redis | null> {
     try {
       const { default: Redis } = await import("ioredis");
       const client = new Redis(this.redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1, enableOfflineQueue: false });
@@ -145,11 +159,14 @@ export class BudgetTracker {
         this.client = null;
         client.disconnect();
         this.clientFailed = true;
+        this.retryAt = Date.now() + BudgetTracker.RETRY_BACKOFF_MS;
         return null;
       });
+      this.clientFailed = false;
       return this.client;
     } catch {
       this.clientFailed = true;
+      this.retryAt = Date.now() + BudgetTracker.RETRY_BACKOFF_MS;
       return null;
     }
   }
@@ -180,6 +197,29 @@ export class BudgetTracker {
   }
 
   /**
+   * Marks a live connection dead after an op-level failure. In non-strict
+   * mode the caller falls through to the memory backend for this op; in
+   * strict mode the error propagates (fail closed).
+   */
+  private markRedisFailed(): void {
+    this.client?.disconnect();
+    this.client = null;
+    this.clientFailed = true;
+    this.retryAt = Date.now() + BudgetTracker.RETRY_BACKOFF_MS;
+  }
+
+  /** Runs a Redis op, falling back on op failure when non-strict. */
+  private async tryRedis<T>(op: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false }> {
+    try {
+      return { ok: true, value: await op() };
+    } catch (e) {
+      if (this.requireRedis) throw e;
+      this.markRedisFailed();
+      return { ok: false };
+    }
+  }
+
+  /**
    * Atomically reserves `estimatedCost` for `requestId` against the account
    * budget. Idempotent: a repeated call for the same requestId reports the
    * existing reservation rather than double-charging capacity.
@@ -190,11 +230,16 @@ export class BudgetTracker {
     const budgetKey = `budget:${accountId}`;
 
     if (redis) {
-      const res = (await redis.eval(RESERVE_LUA, 1, budgetKey, requestId, String(estimatedCost), String(this.currentMonth()), "1")) as [number, number];
-      const remaining = res[1] >= 1e15 ? Infinity : res[1];
-      return res[0] === 2
-        ? { allowed: false, remaining, reason: "exceeded" }
-        : { allowed: true, remaining, reason: res[0] === 1 ? "already_reserved" : "reserved" };
+      const r = await this.tryRedis(() =>
+        redis.eval(RESERVE_LUA, 1, budgetKey, requestId, String(estimatedCost), String(this.currentMonth()), "1") as Promise<[number, number]>
+      );
+      if (r.ok) {
+        const res = r.value;
+        const remaining = res[1] >= 1e15 ? Infinity : res[1];
+        return res[0] === 2
+          ? { allowed: false, remaining, reason: "exceeded" }
+          : { allowed: true, remaining, reason: res[0] === 1 ? "already_reserved" : "reserved" };
+      }
     }
 
     const budget = this.maybeResetBudget(
@@ -233,8 +278,10 @@ export class BudgetTracker {
 
     if (redis) {
       const markerKey = `budget_settled:${accountId}:${requestId}`;
-      await redis.eval(SETTLE_LUA, 2, budgetKey, markerKey, requestId, String(actual), String(SETTLE_MARKER_TTL_SECONDS));
-      return;
+      const r = await this.tryRedis(() =>
+        redis.eval(SETTLE_LUA, 2, budgetKey, markerKey, requestId, String(actual), String(SETTLE_MARKER_TTL_SECONDS))
+      );
+      if (r.ok) return;
     }
 
     const marker = `${accountId}:${requestId}`;
@@ -258,8 +305,8 @@ export class BudgetTracker {
     const budgetKey = `budget:${accountId}`;
 
     if (redis) {
-      await redis.eval(RELEASE_LUA, 1, budgetKey, requestId);
-      return;
+      const r = await this.tryRedis(() => redis.eval(RELEASE_LUA, 1, budgetKey, requestId));
+      if (r.ok) return;
     }
 
     const budget = inMemoryBudgets.get(budgetKey);

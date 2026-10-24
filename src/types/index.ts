@@ -8,6 +8,11 @@ export interface GatewayConfig {
   databasePath: string;
   redisUrl: string;
   gatewayApiKey: string;
+  /**
+   * When true, the budget tracker requires Redis and fails closed rather than
+   * silently degrading to per-process memory (divergent accounting).
+   */
+  strictStorage: boolean;
   providers: Record<string, ProviderConfig>;
   routing: RoutingConfig;
   policy: PolicyConfig;

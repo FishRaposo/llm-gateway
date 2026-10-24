@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit && eslint .",
-    "test:integration": "vitest run --config vitest.integration.config.ts"
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "benchmark:portfolio": "tsx scripts/benchmark_portfolio_gateway.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
