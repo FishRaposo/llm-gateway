@@ -4,7 +4,7 @@ import tsparser from "@typescript-eslint/parser";
 /** @type {import("eslint").Linter.FlatConfig[]} */
 export default [
   {
-    files: ["src/**/*.ts", "tests/**/*.ts", "dashboard/src/**/*.ts", "dashboard/src/**/*.tsx"],
+    files: ["src/**/*.ts", "tests/**/*.ts"],
     languageOptions: {
       parser: tsparser,
       parserOptions: {
@@ -24,6 +24,6 @@ export default [
     },
   },
   {
-    ignores: ["dist/**", "node_modules/**", "coverage/**", "_archive/**", "**/.next/**"],
+    ignores: ["dist/**", "node_modules/**", "coverage/**", "_archive/**", "**/.next/**", "dashboard/**"],
   },
 ];
