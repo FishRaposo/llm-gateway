@@ -4,6 +4,8 @@ import type { Request } from "express";
 import type { RequestContext, GatewayResponse, RoutingDecision } from "../types/routing";
 import type { ProviderRequest, ProviderResponse } from "../types/provider";
 import { v4 as uuidv4 } from "uuid";
+import { isValidUsage, normalizeUsage } from "../providers/usage";
+import { getPricing } from "../shared/pricing";
 
 /**
  * Parses and validates an incoming Express request into a RequestContext.
@@ -45,13 +47,13 @@ export function parseRequest(req: Request): RequestContext {
     ? authHeader.slice(7)
     : "";
 
-  // Client-supplied idempotency identity: retries of the same logical request
-  // reuse the same requestId so budget reserve/settle stays exactly-once.
+  // Correlation headers do not deduplicate provider calls. Each dispatched
+  // attempt therefore needs a server-generated accounting identity; otherwise
+  // clients could reuse an id while incurring new spend that settles only once.
   const clientRequestId =
     (req.headers["idempotency-key"] as string | undefined) ??
     (req.headers["x-request-id"] as string | undefined);
-  const requestId =
-    clientRequestId && clientRequestId.length <= 128 ? clientRequestId : uuidv4();
+  const requestId = uuidv4();
 
   return {
     requestId,
@@ -67,6 +69,7 @@ export function parseRequest(req: Request): RequestContext {
     maxTokens: body.max_tokens,
     stream: Boolean(body.stream),
     metadata: {
+      clientRequestId: clientRequestId && clientRequestId.length <= 128 ? clientRequestId : undefined,
       userAgent: req.headers["user-agent"],
       ip: req.ip,
     },
@@ -111,6 +114,8 @@ export function parseProviderResponse(
   decision: RoutingDecision,
   startTime: number
 ): GatewayResponse {
+  const usageKnown = providerResponse.usageKnown !== false && isValidUsage(providerResponse.usage);
+  const usage = usageKnown ? providerResponse.usage : normalizeUsage(undefined, undefined, undefined).usage;
   return {
     id: providerResponse.id,
     object: "chat.completion",
@@ -124,11 +129,9 @@ export function parseProviderResponse(
       },
       finishReason: choice.finishReason,
     })),
-    usage: {
-      promptTokens: providerResponse.usage.promptTokens,
-      completionTokens: providerResponse.usage.completionTokens,
-      totalTokens: providerResponse.usage.totalTokens,
-    },
+    usage,
+    usageKnown,
+    costBasis: usageKnown && getPricing(providerResponse.model) !== null ? "measured" : "unknown",
     provider: providerResponse.provider,
     cacheHit: false,
     fallbackUsed: decision.fallbackUsed,

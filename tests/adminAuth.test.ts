@@ -134,13 +134,13 @@ describe("Audit log redaction (no raw API key persisted)", () => {
     if (rows.length > 0) {
       // SQLite-backed: the persisted row must carry the masked key only.
       const row = rows.find((r) => r.id === "audit-1") ?? rows[0];
-      expect(row.apiKey).toBe("gw-12345...");
+      expect(row.apiKey).toBe("[redacted]");
       expect(row.apiKey).not.toContain("supersecretvalue");
     } else {
       // In-memory fallback: the serialized entry must not leak the raw secret.
       expect(logged).not.toContain(rawKey);
       expect(logged).not.toContain("supersecretvalue");
-      expect(logged).toContain("gw-12345...");
+      expect(logged).toContain("[redacted]");
     }
   });
 });

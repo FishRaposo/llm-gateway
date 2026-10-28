@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const fake = {
+  connect: vi.fn().mockResolvedValue(undefined),
   ping: vi.fn<() => Promise<string>>(),
   eval: vi.fn(),
   get: vi.fn(),

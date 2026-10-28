@@ -5,6 +5,7 @@ import type { ProviderRequest, ProviderResponse, ModelInfo, ProviderHealth } fro
 import { getModelInfo as getSharedModelInfo } from "../shared/pricing";
 import { providerErrorFromStatus } from "./errors";
 import { v4 as uuidv4 } from "uuid";
+import { normalizeUsage } from "./usage";
 
 export class GeminiProvider extends BaseProvider {
   async complete(request: ProviderRequest): Promise<ProviderResponse> {
@@ -52,7 +53,7 @@ export class GeminiProvider extends BaseProvider {
       ? request.model
       : `models/${request.model}`;
 
-    const url = `${this.baseUrl}/${model}:streamGenerateContent?key=${this.apiKey}`;
+    const url = `${this.baseUrl}/${model}:streamGenerateContent?alt=sse&key=${this.apiKey}`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -73,8 +74,6 @@ export class GeminiProvider extends BaseProvider {
 
     const decoder = new TextDecoder();
     let buffer = "";
-    let promptTokens = 0;
-    let completionTokens = 0;
 
     while (true) {
       if (signal?.aborted) {
@@ -90,15 +89,15 @@ export class GeminiProvider extends BaseProvider {
 
       for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith("[")) continue;
+        if (!trimmed.startsWith("data: ")) continue;
         try {
-          const chunk = JSON.parse(trimmed) as Record<string, unknown>;
+          const chunk = JSON.parse(trimmed.slice(6)) as Record<string, unknown>;
+          const usage = chunk.usageMetadata as Record<string, number> | undefined;
           const candidates = chunk.candidates as Array<Record<string, unknown>> | undefined;
-          if (candidates && candidates.length > 0) {
-            const content = candidates[0].content as Record<string, unknown> | undefined;
+          if ((candidates && candidates.length > 0) || usage) {
+            const content = candidates?.[0]?.content as Record<string, unknown> | undefined;
             const parts = content?.parts as Array<{ text?: string }> | undefined;
             const text = parts?.map((p) => p.text).join("") ?? "";
-            completionTokens += text.split(/\s+/).length || 1;
             yield {
               id: `gemini-${uuidv4()}`,
               model: request.model,
@@ -106,15 +105,10 @@ export class GeminiProvider extends BaseProvider {
               choices: [{
                 index: 0,
                 message: { role: "assistant", content: text },
-                finishReason: candidates[0].finishReason as string ?? null,
+                finishReason: candidates?.[0]?.finishReason as string ?? null,
               }],
-              usage: { promptTokens, completionTokens, totalTokens: promptTokens + completionTokens },
+              ...normalizeUsage(usage?.promptTokenCount, usage?.candidatesTokenCount, usage?.totalTokenCount),
             };
-          }
-          const usage = chunk.usageMetadata as Record<string, number> | undefined;
-          if (usage) {
-            promptTokens = usage.promptTokenCount ?? promptTokens;
-            completionTokens = usage.candidatesTokenCount ?? completionTokens;
           }
         } catch {
           // Skip malformed JSON lines
@@ -186,11 +180,7 @@ export class GeminiProvider extends BaseProvider {
         message: { role: "assistant", content: text },
         finishReason: candidate?.finishReason as string ?? "stop",
       }],
-      usage: {
-        promptTokens: usage?.promptTokenCount ?? 0,
-        completionTokens: usage?.candidatesTokenCount ?? 0,
-        totalTokens: (usage?.promptTokenCount ?? 0) + (usage?.candidatesTokenCount ?? 0),
-      },
+      ...normalizeUsage(usage?.promptTokenCount, usage?.candidatesTokenCount, usage?.totalTokenCount),
     };
   }
 }

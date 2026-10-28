@@ -70,13 +70,15 @@ describe("Budget lifecycle (in-memory backend)", () => {
     expect(again.allowed).toBe(true);
   });
 
-  it("unknown usage settles explicitly: reservation released, no fabricated charge", async () => {
+  it("unknown usage retains a hold until measured reconciliation", async () => {
     await tracker.setBudget("acct", 10);
     await tracker.reserve("acct", "req-u", 3);
     await tracker.settle("acct", "req-u", null);
     const status = await tracker.getBudgetStatus("acct");
-    expect(status.reserved).toBe(0);
-    expect(status.used).toBe(0); // explicit zero — not an invented estimate
+    expect(status.reserved).toBe(3);
+    expect(status.used).toBe(0); // no invented bill; the capacity remains held
+    await tracker.settle("acct", "req-u", 2);
+    expect(await tracker.getBudgetStatus("acct")).toMatchObject({ used: 2, reserved: 0, remaining: 8 });
   });
 
   it("accounts are isolated: one account's spend cannot consume another's limit", async () => {

@@ -40,8 +40,25 @@ export function createAuthMiddleware(config: GatewayConfig, store: ApiKeyStore):
     context.apiKeyId = result.record.id;
     context.accountId = result.record.id;
     context.permissions = result.record.permissions;
+    context.allowedModels = result.record.allowedModels;
+    if (!context.permissions.includes("*") && !context.permissions.includes("chat")) {
+      throwPermissionError("API key does not permit chat requests");
+    }
+    assertModelAllowed(context, context.originalModel);
     return context;
   };
+}
+
+/** Apply the key's model allowlist to the actual selected model, including fallbacks. */
+export function assertModelAllowed(context: RequestContext, model: string): void {
+  const allowed = context.allowedModels;
+  if (allowed && !allowed.includes("*") && !allowed.includes(model)) {
+    throwPermissionError(`Model "${model}" is not allowed for this API key`);
+  }
+}
+
+function throwPermissionError(message: string): never {
+  throw Object.assign(new Error(message), { statusCode: 403, code: "forbidden" });
 }
 
 /**
@@ -106,8 +123,7 @@ export async function listApiKeys(store: ApiKeyStore): Promise<Array<{ id: strin
  * @returns Masked key string.
  */
 export function maskApiKey(key: string): string {
-  if (key.length <= 8) return key;
-  return `${key.slice(0, 8)}...`;
+  return key ? "[redacted]" : "[missing]";
 }
 
 /**
