@@ -241,3 +241,7 @@ docker compose up -d
 ## 12. What This Project Demonstrates
 
 Middleware design, provider abstraction, cost management, reliability engineering, and API gateway patterns — the infrastructure layer that separates toy AI demos from production AI systems.
+
+## Part of the stack
+
+[groundtruth](https://github.com/FishRaposo/groundtruth) · [evalforge](https://github.com/FishRaposo/evalforge) · [aria-agent](https://github.com/FishRaposo/aria-agent) · [agenttrace](https://github.com/FishRaposo/agenttrace) · [WCP-Compliance-Agent-V5](https://github.com/FishRaposo/WCP-Compliance-Agent-V5)
