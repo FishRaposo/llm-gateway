@@ -1,12 +1,12 @@
 # LLM Gateway
 
-[![Tests](https://img.shields.io/badge/tests-177%20backend%20%2B%2041%20UI-brightgreen)]() [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript)]() [![Express](https://img.shields.io/badge/Express-000?logo=express)]() [![Redis](https://img.shields.io/badge/Redis-DC382D?logo=redis)]()
+[![CI](https://github.com/FishRaposo/llm-gateway/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/FishRaposo/llm-gateway/actions/workflows/ci.yml) [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript)]() [![Express](https://img.shields.io/badge/Express-000?logo=express)]() [![Redis](https://img.shields.io/badge/Redis-DC382D?logo=redis)]()
 
 **LLM proxy with routing, guardrails, cost control, and fallback.**
 
 Route requests across multiple providers (OpenAI, Anthropic, Gemini, Ollama) with automatic failover, response caching, and per-API-key cost control.
 
-[Quick Demo](#quick-demo) • [Architecture](#architecture) • [Configuration](#local-quickstart)
+[Quick Demo](#quick-demo) • [Case study](docs/portfolio-case-study.md) • [Architecture](#architecture) • [Configuration](#local-quickstart)
 
 ---
 
