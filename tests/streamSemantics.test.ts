@@ -174,7 +174,7 @@ describe("Stream semantics", () => {
     expect(storage.budgetTracker.settle).toHaveBeenCalledTimes(1);
   });
 
-  it("total pre-content failure releases the reservation — nothing was consumed", async () => {
+  it("pre-content provider failure retains an uncertain-cost hold", async () => {
     providers.set("primary", {
       streamComplete: async function* () {
         throw new Error("primary down");
@@ -194,8 +194,8 @@ describe("Stream semantics", () => {
 
     const body = res.chunks.join("");
     expect(body).toContain("stream_error");
-    expect(storage.budgetTracker.release).toHaveBeenCalledTimes(1);
-    expect(storage.budgetTracker.settle).not.toHaveBeenCalled();
+    expect(storage.budgetTracker.release).not.toHaveBeenCalled();
+    expect(storage.budgetTracker.settle).toHaveBeenCalledWith("acct-1", "req-sem", null);
   });
 
   it("client disconnect aborts the provider request and audits the cancellation", async () => {

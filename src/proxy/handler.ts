@@ -11,9 +11,11 @@ import { Router } from "../routing/router";
 import { handleFallback } from "../routing/fallback";
 import { getProvider } from "../providers/registry";
 import { generateCacheKey } from "../middleware/cache";
-import { calculateCost } from "../shared/pricing";
+import { calculateCost, getPricing } from "../shared/pricing";
 import { handleStreamingRequest } from "./streaming";
 import { recordGatewayError, recordGatewayRequest } from "../metrics";
+import { assertModelAllowed } from "../middleware/auth";
+import { isValidUsage } from "../providers/usage";
 
 /** Surfaces lifecycle/accounting failures as metrics + logs instead of silent drops. */
 function reportLifecycleError(stage: "settle" | "release" | "audit", error: unknown): void {
@@ -52,6 +54,7 @@ export async function handleRequest(
 ): Promise<void> {
   const startTime = Date.now();
   let context: RequestContext | undefined;
+  let providerAttempted = false;
 
   try {
     context = parseRequest(req);
@@ -77,6 +80,7 @@ export async function handleRequest(
     if (context.stream) {
       const router = new Router(config.routing);
       const decision = router.route(context);
+      assertModelAllowed(context, decision.selectedModel);
       const providerRequest = buildProviderRequest(context, decision);
       await handleStreamingRequest(req, res, context, providerRequest, decision.selectedProvider, config, decision, storage);
       return;
@@ -99,6 +103,7 @@ export async function handleRequest(
         startTime
       );
       gatewayResponse.cacheHit = true;
+      gatewayResponse.costBasis = "cached";
 
       const duration = Date.now() - startTime;
       // Cached responses incur no provider charge; audit cost is 0 and the
@@ -122,6 +127,7 @@ export async function handleRequest(
 
     const router = new Router(config.routing);
     const decision = router.route(context);
+    assertModelAllowed(context, decision.selectedModel);
 
     const providerRequest = buildProviderRequest(context, decision);
     const provider = getProvider(decision.selectedProvider, config);
@@ -129,6 +135,7 @@ export async function handleRequest(
     let providerResponse: ProviderResponse;
     let fallbackUsed = false;
     try {
+      providerAttempted = true;
       providerResponse = await provider.complete(providerRequest);
     } catch (error) {
       recordGatewayError("provider_error", decision.selectedProvider, decision.selectedModel);
@@ -141,17 +148,19 @@ export async function handleRequest(
       fallbackUsed = true;
     }
 
-    const cost = calculateCost(
+    context.usageUnknown = providerResponse.usageKnown === false
+      || !isValidUsage(providerResponse.usage) || getPricing(providerResponse.model) === null;
+    const cost = context.usageUnknown ? 0 : calculateCost(
       providerResponse.model,
       providerResponse.usage.promptTokens,
       providerResponse.usage.completionTokens
     );
 
     // Settle the reservation under the canonical account identity. Missing
-    // provider usage settles explicitly as unknown (reservation released,
+    // provider usage settles explicitly as unknown (reservation retained,
     // no fabricated spend recorded).
     if (context.budgetReserved) {
-      const usageKnown = providerResponse.usage != null;
+      const usageKnown = !context.usageUnknown && providerResponse.usage != null;
       context.usageUnknown = !usageKnown;
       await storage.budgetTracker
         .settle(
@@ -205,8 +214,9 @@ export async function handleRequest(
     // The request died after reservation but before settlement — release it
     // so failed requests cannot leak budget capacity.
     if (context?.budgetReserved) {
-      await storage.budgetTracker
-        .release(context.accountId ?? context.apiKeyId ?? context.apiKey, context.requestId)
+      await (providerAttempted
+        ? storage.budgetTracker.settle(context.accountId ?? context.apiKeyId ?? context.apiKey, context.requestId, null)
+        : storage.budgetTracker.release(context.accountId ?? context.apiKeyId ?? context.apiKey, context.requestId))
         .catch(() => {});
       context.budgetReserved = false;
     }
@@ -220,6 +230,7 @@ export async function handleRequest(
     }
 
     const auditEntry = buildAuditEntry(context, null, duration, "error", message);
+    if (providerAttempted) auditEntry.costBasis = "unknown";
     await storage.auditLog.write(auditEntry).catch((e) => reportLifecycleError("audit", e));
     recordGatewayError("gateway_error", "unknown", context?.originalModel ?? "unknown");
     recordGatewayRequest({
@@ -232,8 +243,9 @@ export async function handleRequest(
       costUsd: 0,
     });
 
-    res.status(502).json({
-      error: { message, type: "gateway_error", code: "provider_error" },
+    const typed = error as { statusCode?: number; code?: string };
+    res.status(typed.statusCode ?? 502).json({
+      error: { message, type: "gateway_error", code: typed.code ?? "provider_error" },
     });
   }
 }

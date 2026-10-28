@@ -6,6 +6,7 @@ import type { ProviderResponse, ProviderError } from "../types/provider";
 import { getProvider } from "../providers/registry";
 import { buildProviderRequest } from "../proxy/request";
 import { isAvailable, recordSuccess, recordFailure, resetAll } from "./circuitBreaker";
+import { assertModelAllowed } from "../middleware/auth";
 
 /**
  * Handles a provider failure by trying the next provider in the fallback chain.
@@ -44,6 +45,7 @@ export async function handleFallback(
   let retries = 0;
 
   for (const alternative of alternatives) {
+    try { assertModelAllowed(context, alternative.model); } catch { continue; }
     if (retries >= fallbackConfig.maxRetries) break;
     if (!isAvailable(alternative.provider, fallbackConfig.circuitBreaker)) continue;
 

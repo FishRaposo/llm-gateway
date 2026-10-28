@@ -5,6 +5,7 @@ import type { ProviderRequest, ProviderResponse, ModelInfo, ProviderHealth } fro
 import { getModelInfo as getSharedModelInfo } from "../shared/pricing";
 import { providerErrorFromStatus } from "./errors";
 import { v4 as uuidv4 } from "uuid";
+import { normalizeUsage } from "./usage";
 
 export class OllamaProvider extends BaseProvider {
   async complete(request: ProviderRequest): Promise<ProviderResponse> {
@@ -92,7 +93,7 @@ export class OllamaProvider extends BaseProvider {
         try {
           const chunk = JSON.parse(trimmed) as Record<string, unknown>;
           const message = chunk.message as Record<string, unknown> | undefined;
-          if (message && typeof message.content === "string") {
+          if ((message && typeof message.content === "string") || chunk.done) {
             yield {
               id: `ollama-${uuidv4()}`,
               model: request.model,
@@ -100,12 +101,16 @@ export class OllamaProvider extends BaseProvider {
               choices: [{
                 index: 0,
                 message: {
-                  role: (message.role as "assistant" | "user" | "system") || "assistant",
-                  content: message.content,
+                  role: (message?.role as "assistant" | "user" | "system") || "assistant",
+                  content: (message?.content as string) ?? "",
                 },
                 finishReason: chunk.done ? "stop" : null,
               }],
-              usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+              ...normalizeUsage(
+                chunk.done ? chunk.prompt_eval_count : undefined,
+                chunk.done ? chunk.eval_count : undefined,
+                Number(chunk.prompt_eval_count) + Number(chunk.eval_count),
+              ),
             };
           }
         } catch {
@@ -154,14 +159,6 @@ export class OllamaProvider extends BaseProvider {
   private normalizeResponse(data: Record<string, unknown>, model: string): ProviderResponse {
     const message = data.message as Record<string, unknown> | undefined;
     const content = (message?.content as string) ?? "";
-    const usage = data.prompt_eval_count !== undefined
-      ? {
-          promptTokens: (data.prompt_eval_count as number) ?? 0,
-          completionTokens: (data.eval_count as number) ?? 0,
-          totalTokens: ((data.prompt_eval_count as number) ?? 0) + ((data.eval_count as number) ?? 0),
-        }
-      : { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-
     return {
       id: `ollama-${uuidv4()}`,
       model,
@@ -174,7 +171,7 @@ export class OllamaProvider extends BaseProvider {
         },
         finishReason: data.done ? "stop" : "length",
       }],
-      usage,
+      ...normalizeUsage(data.prompt_eval_count, data.eval_count, Number(data.prompt_eval_count) + Number(data.eval_count)),
     };
   }
 }

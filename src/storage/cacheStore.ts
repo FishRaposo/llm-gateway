@@ -27,14 +27,16 @@ export class CacheStore {
 
     try {
       const { default: Redis } = await import("ioredis");
-      const client = new Redis(this.redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1, enableOfflineQueue: false });
+      const client = new Redis(this.redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1, enableOfflineQueue: false, connectTimeout: 2000, retryStrategy: () => null });
       client.on("error", () => { /* suppress connection errors when Redis is unavailable */ });
-      this.client = client;
-      await client.ping().catch(() => {
-        this.client = null;
+      try {
+        await client.connect();
+        await client.ping();
+      } catch {
         client.disconnect();
         return null;
-      });
+      }
+      this.client = client;
       return this.client;
     } catch {
       return null;

@@ -5,6 +5,7 @@ import { GatewayProviderError } from "./errors";
 import type { ProviderRequest, ProviderResponse, ModelInfo, ProviderHealth } from "../types/provider";
 import { getModelInfo as getSharedModelInfo } from "../shared/pricing";
 import { v4 as uuidv4 } from "uuid";
+import { normalizeUsage } from "./usage";
 
 /**
  * Anthropic provider implementation for the Messages API.
@@ -92,6 +93,8 @@ export class AnthropicProvider extends BaseProvider {
 
     const decoder = new TextDecoder();
     let buffer = "";
+    let inputTokens: number | undefined;
+    let outputTokens: number | undefined;
 
     while (true) {
       if (signal?.aborted) {
@@ -109,6 +112,20 @@ export class AnthropicProvider extends BaseProvider {
         if (line.startsWith("data: ")) {
           try {
             const event = JSON.parse(line.slice(6)) as Record<string, unknown>;
+            if (event.type === "message_start") {
+              const message = event.message as Record<string, unknown> | undefined;
+              const usage = message?.usage as Record<string, number> | undefined;
+              inputTokens = usage?.input_tokens;
+            }
+            if (event.type === "message_delta") {
+              outputTokens = (event.usage as Record<string, number> | undefined)?.output_tokens;
+            }
+            if (event.type === "message_stop") {
+              yield {
+                id: uuidv4(), model: request.model, provider: "anthropic", choices: [],
+                ...normalizeUsage(inputTokens, outputTokens, (inputTokens ?? NaN) + (outputTokens ?? NaN)),
+              };
+            }
             if (event.type === "content_block_delta") {
               yield {
                 id: uuidv4(),
@@ -120,6 +137,7 @@ export class AnthropicProvider extends BaseProvider {
                   finishReason: null,
                 }],
                 usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+                usageKnown: false,
               };
             }
           } catch {
@@ -225,11 +243,7 @@ export class AnthropicProvider extends BaseProvider {
         message: { role: "assistant", content: text },
         finishReason: (data.stop_reason as string) ?? "end_turn",
       }],
-      usage: {
-        promptTokens: usage?.input_tokens ?? 0,
-        completionTokens: usage?.output_tokens ?? 0,
-        totalTokens: (usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0),
-      },
+      ...normalizeUsage(usage?.input_tokens, usage?.output_tokens, (usage?.input_tokens ?? NaN) + (usage?.output_tokens ?? NaN)),
       raw: data,
     };
   }

@@ -43,12 +43,13 @@ describe("Logging middleware", () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
-  it("redacts the api key to a short prefix when logging a request", () => {
+  it("redacts every credential character while retaining a safe key name", () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     logRequest(makeContext());
     const logged = JSON.parse(spy.mock.calls[0][0] as string);
     expect(logged.message).toBe("request_received");
-    expect(logged.apiKey).toBe("sk-secre...");
+    expect(logged.apiKey).toBe("[redacted]");
+    expect(logged.apiKeyName).toBe("test-key");
     expect(logged.apiKey).not.toContain("1234567890");
     expect(logged.messageCount).toBe(2);
     expect(logged.model).toBe("gpt-4o");

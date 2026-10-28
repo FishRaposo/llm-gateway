@@ -13,6 +13,8 @@ export interface RequestContext {
    */
   accountId?: string;
   permissions: string[];
+  /** Model restrictions from the authenticated key record, enforced on routes and fallback. */
+  allowedModels?: string[];
   originalModel: string;
   messages: ChatMessage[];
   temperature?: number;
@@ -40,6 +42,10 @@ export interface GatewayResponse {
   model: string;
   choices: ResponseChoice[];
   usage: ResponseUsage;
+  /** Explicitly distinguishes placeholder counts from measured zero tokens. */
+  usageKnown: boolean;
+  /** Cached service is free; missing usage/pricing never establishes a measured zero bill. */
+  costBasis: "measured" | "unknown" | "cached";
   provider: string;
   cacheHit: boolean;
   fallbackUsed: boolean;

@@ -8,9 +8,10 @@ import type { ProviderRequest } from "../types/provider";
 import type { RoutingDecision } from "../types/routing";
 import { getProvider } from "../providers/registry";
 import { handleFallback } from "../routing/fallback";
-import { calculateCost } from "../shared/pricing";
+import { calculateCost, getPricing } from "../shared/pricing";
 import type { StorageInstances } from "./handler";
 import { recordGatewayError } from "../metrics";
+import { isValidUsage, normalizeUsage } from "../providers/usage";
 
 /**
  * Handles a streaming request by setting up SSE headers and forwarding provider stream chunks.
@@ -106,11 +107,18 @@ export async function handleStreamingRequest(
 
     for await (const chunk of stream) {
       if (abortController.signal.aborted) break;
-      const data = JSON.stringify(chunk);
+      finalModel = chunk.model || finalModel;
+      const chunkUsageKnown = chunk.usageKnown !== false && isValidUsage(chunk.usage);
+      const data = JSON.stringify({
+        ...chunk,
+        usage: chunkUsageKnown ? chunk.usage : normalizeUsage(undefined, undefined, undefined).usage,
+        usageKnown: chunkUsageKnown,
+        costBasis: chunkUsageKnown && getPricing(finalModel) !== null ? "measured" : "unknown",
+      });
       res.write(`data: ${data}\n\n`);
       contentEmitted = true;
 
-      if (chunk.usage) {
+      if (chunkUsageKnown && getPricing(finalModel) !== null) {
         inputTokens = chunk.usage.promptTokens;
         outputTokens = chunk.usage.completionTokens;
         usageSeen = true;
@@ -150,9 +158,14 @@ export async function handleStreamingRequest(
         inputTokens = fallbackResponse.usage?.promptTokens ?? 0;
         outputTokens = fallbackResponse.usage?.completionTokens ?? 0;
         fallbackUsed = true;
-        const fallbackUsageKnown = fallbackResponse.usage != null;
+        const fallbackUsageKnown = fallbackResponse.usageKnown !== false && isValidUsage(fallbackResponse.usage) && getPricing(finalModel) !== null;
 
-        const chunk = JSON.stringify(fallbackResponse);
+        const chunk = JSON.stringify({
+          ...fallbackResponse,
+          usage: isValidUsage(fallbackResponse.usage) ? fallbackResponse.usage : normalizeUsage(undefined, undefined, undefined).usage,
+          usageKnown: fallbackResponse.usageKnown !== false && isValidUsage(fallbackResponse.usage),
+          costBasis: fallbackUsageKnown ? "measured" : "unknown",
+        });
         res.write(`data: ${chunk}\n\n`);
         terminate("done");
 
@@ -167,8 +180,8 @@ export async function handleStreamingRequest(
 
         // Nothing was consumed or emitted — release the reservation rather
         // than charging for a failed request.
-        await lifecycle("release", null);
-        await writeAuditEntry(storage, context, finalModel, finalProvider, 0, 0, 0, Date.now() - startTime, "error", fallbackUsed, false, false, message);
+        await lifecycle("settle", null);
+        await writeAuditEntry(storage, context, finalModel, finalProvider, 0, 0, 0, Date.now() - startTime, "error", fallbackUsed, false, true, message);
       }
       return;
     }

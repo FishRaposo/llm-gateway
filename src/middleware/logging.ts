@@ -4,6 +4,7 @@ import type { GatewayConfig } from "../types";
 import type { RequestContext } from "../types/routing";
 import type { MiddlewareFunction } from "../proxy/handler";
 import type { AuditLogStorage } from "../storage/auditLog";
+import { maskApiKey } from "./auth";
 
 /**
  * Creates a logging middleware that records request metadata to the audit log.
@@ -29,7 +30,8 @@ export function logRequest(context: RequestContext): void {
   const entry = {
     id: context.requestId,
     timestamp: context.timestamp,
-    apiKey: `${context.apiKey.slice(0, 8)}...`,
+    apiKey: maskApiKey(context.apiKey),
+    accountId: context.accountId ?? context.apiKeyId,
     apiKeyName: context.apiKeyName,
     model: context.originalModel,
     messageCount: context.messages.length,

@@ -72,7 +72,7 @@ export class AuditLogStorage {
 
     // Never persist the raw API key — store only a masked form so neither the
     // SQLite table nor GET /admin/logs can leak a cross-tenant secret.
-    const safeEntry: AuditEntry = { ...entry, apiKey: maskApiKey(entry.apiKey) };
+    const safeEntry: AuditEntry = { ...entry, apiKey: entry.accountId ?? maskApiKey(entry.apiKey) };
 
     if (this.db) {
       const stmt = this.db.prepare(`
@@ -156,7 +156,9 @@ export class AuditLogStorage {
     return rows.map((row) => ({
       id: row.id as string,
       timestamp: row.timestamp as string,
-      apiKey: row.api_key as string,
+      // Legacy rows may contain a full short credential. Never return it;
+      // retain useful correlation through the existing nonsecret account id.
+      apiKey: (row.account_id as string | null) ?? maskApiKey(String(row.api_key ?? "")),
       apiKeyName: row.api_key_name as string,
       accountId: (row.account_id as string | null) ?? undefined,
       model: row.model as string,

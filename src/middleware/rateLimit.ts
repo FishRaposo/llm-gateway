@@ -27,13 +27,16 @@ export async function initRateLimitRedis(url: string): Promise<void> {
   redisUrl = url;
   try {
     const { default: Redis } = await import("ioredis");
-    const client = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1, enableOfflineQueue: false });
+    const client = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1, enableOfflineQueue: false, connectTimeout: 2000, retryStrategy: () => null });
     client.on("error", () => { /* suppress connection errors when Redis is unavailable */ });
-    redisClient = client;
-    await client.ping().catch(() => {
+    try {
+      await client.connect();
+      await client.ping();
+      redisClient = client;
+    } catch {
       redisClient = null;
       client.disconnect();
-    });
+    }
   } catch {
     redisClient = null;
   }

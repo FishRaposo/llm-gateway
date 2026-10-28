@@ -7,7 +7,7 @@ import type { CacheStore } from "../storage/cacheStore";
 import type { BudgetTracker } from "../storage/budgetTracker";
 import type { ApiKeyStore } from "../storage/apiKeyStore";
 import { getUsageStats, getProviderHealth } from "./dashboard";
-import { listApiKeys, registerApiKey, maskApiKey } from "../middleware/auth";
+import { listApiKeys, registerApiKey } from "../middleware/auth";
 
 export interface AdminStorage {
   auditLog: AuditLogStorage;
@@ -71,7 +71,7 @@ export function createAdminRouter(storage: AdminStorage, config: GatewayConfig):
       for (const keyInfo of keys) {
         const status = await storage.budgetTracker.getBudgetStatus(keyInfo.id);
         budgets.push({
-          key: maskApiKey(keyInfo.id),
+          key: keyInfo.id,
           name: keyInfo.name,
           limitUsd: status.limit,
           usedUsd: status.used,

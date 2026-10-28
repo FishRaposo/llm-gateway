@@ -5,6 +5,7 @@ import type { ProviderRequest, ProviderResponse, ModelInfo, ProviderHealth, Prov
 import { getModelInfo as getSharedModelInfo } from "../shared/pricing";
 import { v4 as uuidv4 } from "uuid";
 import { GatewayProviderError } from "./errors";
+import { normalizeUsage } from "./usage";
 
 /**
  * OpenAI provider implementation for the chat completions API.
@@ -58,6 +59,7 @@ export class OpenAIProvider extends BaseProvider {
       temperature: request.temperature,
       max_tokens: request.maxTokens,
       stream: true,
+      stream_options: { include_usage: true },
     };
 
     const response = await fetch(url, {
@@ -172,11 +174,7 @@ export class OpenAIProvider extends BaseProvider {
       model: (data.model as string) || "unknown",
       provider: "openai",
       choices,
-      usage: {
-        promptTokens: usage?.prompt_tokens ?? 0,
-        completionTokens: usage?.completion_tokens ?? 0,
-        totalTokens: usage?.total_tokens ?? 0,
-      },
+      ...normalizeUsage(usage?.prompt_tokens, usage?.completion_tokens, usage?.total_tokens),
       raw: data,
     };
   }
@@ -187,6 +185,7 @@ export class OpenAIProvider extends BaseProvider {
    * @returns Partial provider response.
    */
   private normalizeStreamChunk(chunk: Record<string, unknown>): ProviderResponse {
+    const usage = chunk.usage as Record<string, number> | null | undefined;
     const choices = (chunk.choices as Array<Record<string, unknown>>)?.map((choice, index) => ({
       index,
       message: {
@@ -201,7 +200,7 @@ export class OpenAIProvider extends BaseProvider {
       model: (chunk.model as string) || "unknown",
       provider: "openai",
       choices,
-      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      ...normalizeUsage(usage?.prompt_tokens, usage?.completion_tokens, usage?.total_tokens),
       raw: chunk,
     };
   }

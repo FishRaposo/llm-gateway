@@ -20,6 +20,8 @@ export interface ProviderResponse {
   provider: string;
   choices: ProviderChoice[];
   usage: ProviderUsage;
+  /** False when counts are absent or incomplete; numeric placeholders are not measured usage. */
+  usageKnown?: boolean;
   raw?: unknown;
 }
 

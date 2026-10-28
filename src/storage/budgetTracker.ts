@@ -101,6 +101,22 @@ return { 0 }
 
 const SETTLE_MARKER_TTL_SECONDS = 86400;
 
+// Reads may reset a monthly period, so that read/reset must share the same
+// atomic boundary as reserve/settle. A GET followed by SET loses concurrent bills.
+const READ_LUA = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then return false end
+local b = cjson.decode(raw)
+local month = tonumber(ARGV[1])
+if b.period == 'monthly' and b.resetMonth and b.resetMonth ~= month then
+  b.used = 0
+  b.resetMonth = month
+  b.reserved = {}
+  redis.call('SET', KEYS[1], cjson.encode(b))
+end
+return cjson.encode(b)
+`;
+
 export class BudgetTracker {
   private redisUrl: string;
   private client: import("ioredis").Redis | null = null;
@@ -152,16 +168,18 @@ export class BudgetTracker {
   private async attemptConnect(): Promise<import("ioredis").Redis | null> {
     try {
       const { default: Redis } = await import("ioredis");
-      const client = new Redis(this.redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1, enableOfflineQueue: false });
+      const client = new Redis(this.redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1, enableOfflineQueue: false, connectTimeout: 2000, retryStrategy: () => null });
       client.on("error", () => { /* suppress connection errors when Redis is unavailable */ });
-      this.client = client;
-      await client.ping().catch(() => {
-        this.client = null;
+      try {
+        await client.connect();
+        await client.ping();
+      } catch {
         client.disconnect();
         this.clientFailed = true;
         this.retryAt = Date.now() + BudgetTracker.RETRY_BACKOFF_MS;
         return null;
-      });
+      }
+      this.client = client;
       this.clientFailed = false;
       return this.client;
     } catch {
@@ -225,6 +243,9 @@ export class BudgetTracker {
    * existing reservation rather than double-charging capacity.
    */
   async reserve(accountId: string, requestId: string, estimatedCost: number): Promise<ReserveResult> {
+    if (!Number.isFinite(estimatedCost) || estimatedCost < 0) {
+      throw new RangeError("Reservation cost must be finite and nonnegative");
+    }
     const redis = await this.getClient();
     this.assertBackend(redis);
     const budgetKey = `budget:${accountId}`;
@@ -266,11 +287,14 @@ export class BudgetTracker {
   /**
    * Settles a reservation: charges `actualCost` to used spend and clears the
    * reservation. `actualCost === null` records an explicit unknown-usage
-   * settlement — the reservation is released and usage is charged as 0 while
+   * settlement — the reservation remains held pending measured reconciliation;
    * callers mark the audit trail accordingly. Idempotent per requestId:
    * replays are no-ops.
    */
   async settle(accountId: string, requestId: string, actualCost: number | null): Promise<void> {
+    // An unknown bill is not a free request. Keep the reservation available
+    // for explicit later reconciliation with measured usage.
+    if (actualCost === null || !Number.isFinite(actualCost) || actualCost < 0) return;
     const redis = await this.getClient();
     this.assertBackend(redis);
     const budgetKey = `budget:${accountId}`;
@@ -327,11 +351,10 @@ export class BudgetTracker {
     const budgetKey = `budget:${key}`;
 
     if (redis) {
-      const data = await redis.get(budgetKey);
+      const data = await redis.eval(READ_LUA, 1, budgetKey, String(this.currentMonth())) as string | null;
       if (!data) return Infinity;
       const budget = this.maybeResetBudget(JSON.parse(data) as BudgetRecord);
       budget.limit = budget.limit ?? null;
-      await redis.set(budgetKey, JSON.stringify(budget));
       if (budget.limit === null) return Infinity;
       return Math.max(0, budget.limit - budget.used - this.reservedTotal(budget));
     }
@@ -350,6 +373,9 @@ export class BudgetTracker {
    * @param amount - Amount to deduct in USD.
    */
   async deductBudget(key: string, amount: number): Promise<void> {
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new RangeError("Deducted cost must be finite and nonnegative");
+    }
     const redis = await this.getClient();
     const budgetKey = `budget:${key}`;
 
@@ -402,11 +428,10 @@ export class BudgetTracker {
     const budgetKey = `budget:${key}`;
 
     if (redis) {
-      const data = await redis.get(budgetKey);
+      const data = await redis.eval(READ_LUA, 1, budgetKey, String(this.currentMonth())) as string | null;
       if (!data) return { used: 0, limit: Infinity, remaining: Infinity, reserved: 0 };
       const budget = this.maybeResetBudget(JSON.parse(data) as BudgetRecord);
       budget.limit = budget.limit ?? null;
-      await redis.set(budgetKey, JSON.stringify(budget));
       const reserved = this.reservedTotal(budget);
       const limit = budget.limit === null ? Infinity : budget.limit;
       return { used: budget.used, limit, remaining: limit === Infinity ? Infinity : Math.max(0, limit - budget.used - reserved), reserved };
