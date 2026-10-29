@@ -60,6 +60,9 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: tailwindcss
         update-types: ["version-update:semver-major"]
+      # vitest 5 changed vi.fn() mock semantics (see agenttrace); deliberate migration.
+      - dependency-name: vitest
+        update-types: ["version-update:semver-major"]
       - dependency-name: eslint
         update-types: ["version-update:semver-major"]
       - dependency-name: "@typescript-eslint/*"
