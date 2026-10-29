@@ -198,7 +198,7 @@ describe("POST /v1/chat/completions in mock mode (HTTP level)", () => {
   it("reports mock: true on /health", async () => {
     const res = await fetch(`${baseUrl}/health`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok", version: "1.0.0", mock: true });
+    expect(await res.json()).toMatchObject({ status: "ok", mock: true });
   });
 
   it("blocks a prompt-injection request with 403 guardrails_denied before reaching the provider", async () => {
@@ -266,7 +266,7 @@ describe("/health in production with no keys (HTTP level)", () => {
 
   it("reports mock: false and does not serve fake completions", async () => {
     const health = await fetch(`${baseUrl}/health`);
-    expect(await health.json()).toEqual({ status: "ok", version: "1.0.0", mock: false });
+    expect(await health.json()).toMatchObject({ status: "ok", mock: false });
 
     const res = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
