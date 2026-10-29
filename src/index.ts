@@ -84,6 +84,7 @@ export function createApp(config = getConfig()): express.Application {
       },
       budgetsEnabled: config.budgets.enabled,
       strictStorage: config.strictStorage,
+      mock: Boolean(config.providers.mock),
     });
   });
 
@@ -136,6 +137,12 @@ if (isMain) {
     defaultModel: config.defaultModel,
     providers: Object.keys(config.providers),
   }));
+  if (config.providers.mock && Object.keys(config.providers).length === 1) {
+    console.log(JSON.stringify({
+      level: "warn",
+      message: "Mock mode: no provider keys configured, serving canned completions from MockProvider. Set OPENAI_API_KEY (or another provider key) or MOCK_PROVIDER=false to disable.",
+    }));
+  }
   });
 }
 

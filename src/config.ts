@@ -66,6 +66,31 @@ function loadYamlFile<T>(filePath: string): T | null {
   return normalizeKeys(raw) as T;
 }
 
+const MOCK_TRUE = new Set(["true", "1", "yes", "on"]);
+const MOCK_FALSE = new Set(["false", "0", "no", "off"]);
+
+/**
+ * Decides whether the MockProvider is registered.
+ * MOCK_PROVIDER true/1/yes/on: always; false/0/no/off: never (case-insensitive).
+ * Unset or empty: only when no real provider is configured and NODE_ENV is not
+ * "production", so a production deploy that lost its keys fails loudly instead
+ * of serving fake completions.
+ * @param raw - Raw MOCK_PROVIDER value.
+ * @param realProviderCount - Number of real providers configured from env.
+ * @param isProduction - Whether NODE_ENV is "production".
+ * @returns True if the mock provider should be registered.
+ * @throws Error for any other MOCK_PROVIDER value.
+ */
+export function resolveMockEnabled(raw: string | undefined, realProviderCount: number, isProduction: boolean): boolean {
+  const value = (raw ?? "").trim().toLowerCase();
+  if (MOCK_TRUE.has(value)) return true;
+  if (MOCK_FALSE.has(value)) return false;
+  if (value === "") return realProviderCount === 0 && !isProduction;
+  throw new Error(
+    `Invalid MOCK_PROVIDER value "${raw}": use true/1/yes/on, false/0/no/off, or leave it unset`
+  );
+}
+
 /**
  * Loads the full gateway configuration from environment variables and YAML files.
  * Environment variables take precedence over YAML defaults.
@@ -122,18 +147,36 @@ export function loadConfig(): GatewayConfig {
     };
   }
 
+  // Offline mock mode (see resolveMockEnabled). Outside production, a fresh
+  // clone with no keys serves canned completions instead of failing every
+  // request; in production the mock must be requested explicitly.
+  const realProviderCount = Object.keys(providers).length;
+  const mockEnabled = resolveMockEnabled(
+    process.env.MOCK_PROVIDER,
+    realProviderCount,
+    process.env.NODE_ENV === "production"
+  );
+  if (mockEnabled) {
+    providers.mock = { type: "mock", apiKey: "mock" };
+  }
+  // With the mock as the only provider and no routing.yaml, route to it by
+  // default; the built-in default (openai) would fail with "not configured".
+  const mockOnly = mockEnabled && realProviderCount === 0;
+
   const rawConfig = {
     port: parseInt(process.env.GATEWAY_PORT || "3000", 10),
     logLevel: process.env.LOG_LEVEL || "info",
-    defaultModel: process.env.DEFAULT_MODEL || "gpt-4o-mini",
-    defaultProvider: process.env.DEFAULT_PROVIDER || "openai",
+    defaultModel: process.env.DEFAULT_MODEL || (mockOnly ? "mock" : "gpt-4o-mini"),
+    defaultProvider: process.env.DEFAULT_PROVIDER || (mockOnly ? "mock" : "openai"),
     databasePath: process.env.DATABASE_PATH || "./data/gateway.db",
     redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
     gatewayApiKey: process.env.GATEWAY_API_KEY || "gateway-admin-key",
     strictStorage: process.env.STRICT_STORAGE === "true",
     providers,
     routing: routing ?? {
-      default: { provider: "openai", model: "gpt-4o-mini" },
+      default: mockOnly
+        ? { provider: "mock", model: "mock" }
+        : { provider: "openai", model: "gpt-4o-mini" },
       rules: [],
       fallback: { enabled: true, maxRetries: 3, circuitBreaker: { failureThreshold: 5, resetTimeoutMs: 60000 } },
     },
