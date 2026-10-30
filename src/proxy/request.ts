@@ -7,6 +7,13 @@ import { v4 as uuidv4 } from "uuid";
 import { isValidUsage, normalizeUsage } from "../providers/usage";
 import { getPricing } from "../shared/pricing";
 
+const VALID_MESSAGE_ROLES = new Set(["system", "user", "assistant"]);
+const UNFORWARDED_ROLES = new Set(["tool", "function"]);
+
+// Generous bound above every cataloged model's maxOutputTokens; finer limits
+// belong to policy rules. Keeps absurd values from distorting reservations.
+const MAX_TOKENS_HARD_LIMIT = 131_072;
+
 /**
  * Parses and validates an incoming Express request into a RequestContext.
  * @param req - Express request object.
@@ -29,11 +36,34 @@ export function parseRequest(req: Request): RequestContext {
   }
 
   for (const msg of body.messages) {
-    if (!msg.role || typeof msg.content !== "string") {
+    if (!msg || typeof msg !== "object" || typeof msg.role !== "string" || typeof msg.content !== "string") {
       throw new Error("Each message must have a 'role' and 'content' string");
+    }
+    if (UNFORWARDED_ROLES.has(msg.role)) {
+      throw new Error(`Unsupported message role "${msg.role}": tool/function call results are not forwarded`);
+    }
+    if (!VALID_MESSAGE_ROLES.has(msg.role)) {
+      throw new Error(`Unsupported message role "${msg.role}"`);
     }
     if (msg.content.length > 100_000) {
       throw new Error("Each message 'content' must not exceed 100KB");
+    }
+  }
+
+  if (body.model !== undefined && typeof body.model !== "string") {
+    throw new Error("model must be a string");
+  }
+  if (body.temperature !== undefined) {
+    if (typeof body.temperature !== "number" || !Number.isFinite(body.temperature) || body.temperature < 0) {
+      throw new Error("temperature must be a nonnegative finite number");
+    }
+  }
+  if (body.max_tokens !== undefined) {
+    if (typeof body.max_tokens !== "number" || !Number.isInteger(body.max_tokens) || body.max_tokens < 0) {
+      throw new Error("max_tokens must be a nonnegative integer");
+    }
+    if (body.max_tokens > MAX_TOKENS_HARD_LIMIT) {
+      throw new Error(`max_tokens must not exceed ${MAX_TOKENS_HARD_LIMIT}`);
     }
   }
 
@@ -89,12 +119,10 @@ export function buildProviderRequest(
 ): ProviderRequest {
   return {
     model: decision.selectedModel,
-    messages: context.messages
-      .filter((m) => m.role !== "tool")
-      .map((m) => ({
-        role: m.role as "system" | "user" | "assistant",
-        content: m.content,
-      })),
+    messages: context.messages.map((m) => ({
+      role: m.role as "system" | "user" | "assistant",
+      content: m.content,
+    })),
     temperature: context.temperature,
     maxTokens: context.maxTokens,
     stream: context.stream,

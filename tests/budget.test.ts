@@ -1,8 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { BudgetTracker } from "../src/storage/budgetTracker";
-import { createBudgetMiddleware } from "../src/middleware/budget";
-import { countMessageTokens } from "../src/shared/tokenCounter";
-import { getPricing } from "../src/shared/pricing";
+import { createBudgetMiddleware, estimateRequestCost } from "../src/middleware/budget";
 import type { GatewayConfig } from "../src/types";
 import type { RequestContext } from "../src/types/routing";
 
@@ -64,9 +62,10 @@ describe("Budget Middleware (per-key enforcement by record id)", () => {
 
   // Mirror the middleware's own cost estimate so the assertions are exact
   // regardless of tokenizer specifics.
-  const estimate =
-    countMessageTokens([{ content: messageText }]) *
-    (getPricing(model)?.inputPerToken ?? 0.00001);
+  const estimate = estimateRequestCost({
+    originalModel: model,
+    messages: [{ role: "user", content: messageText }],
+  } as RequestContext);
 
   function makeConfig(): GatewayConfig {
     return {

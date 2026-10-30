@@ -91,6 +91,31 @@ export function resolveMockEnabled(raw: string | undefined, realProviderCount: n
   );
 }
 
+export const DEFAULT_GATEWAY_API_KEY = "gateway-admin-key";
+
+/**
+ * Resolves the bootstrap admin API key.
+ * Unset or still-default in production is a startup error: the built-in value
+ * is public knowledge and grants ["*"] permissions, so a deploy that forgot
+ * GATEWAY_API_KEY fails loudly instead of serving open admin access.
+ * @param raw - Raw GATEWAY_API_KEY value.
+ * @param isProduction - Whether NODE_ENV is "production".
+ * @returns The resolved admin key.
+ * @throws Error when production would use the built-in default.
+ */
+export function resolveAdminApiKey(raw: string | undefined, isProduction: boolean): string {
+  const value = (raw ?? "").trim();
+  if (value !== "" && value !== DEFAULT_GATEWAY_API_KEY) return value;
+  if (isProduction) {
+    throw new Error(
+      "GATEWAY_API_KEY is unset or still the built-in default in production: " +
+      "the default admin credential is public and grants full permissions. " +
+      "Set GATEWAY_API_KEY to a private value."
+    );
+  }
+  return DEFAULT_GATEWAY_API_KEY;
+}
+
 /**
  * Loads the full gateway configuration from environment variables and YAML files.
  * Environment variables take precedence over YAML defaults.
@@ -170,7 +195,7 @@ export function loadConfig(): GatewayConfig {
     defaultProvider: process.env.DEFAULT_PROVIDER || (mockOnly ? "mock" : "openai"),
     databasePath: process.env.DATABASE_PATH || "./data/gateway.db",
     redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
-    gatewayApiKey: process.env.GATEWAY_API_KEY || "gateway-admin-key",
+    gatewayApiKey: resolveAdminApiKey(process.env.GATEWAY_API_KEY, process.env.NODE_ENV === "production"),
     strictStorage: process.env.STRICT_STORAGE === "true",
     providers,
     routing: routing ?? {

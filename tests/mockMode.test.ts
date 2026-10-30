@@ -102,6 +102,7 @@ describe("mock mode configuration", () => {
 describe("mock mode in production", () => {
   it("never auto-enables the mock when NODE_ENV=production and no keys are set", () => {
     process.env.NODE_ENV = "production";
+    process.env.GATEWAY_API_KEY = "prod-test-admin-key";
     const config = loadConfig();
     expect(config.providers.mock).toBeUndefined();
     expect(config.routing.default.provider).toBe("openai");
@@ -109,6 +110,7 @@ describe("mock mode in production", () => {
 
   it("still honours an explicit MOCK_PROVIDER=true in production", () => {
     process.env.NODE_ENV = "production";
+    process.env.GATEWAY_API_KEY = "prod-test-admin-key";
     process.env.MOCK_PROVIDER = "true";
     const config = loadConfig();
     expect(Object.keys(config.providers)).toEqual(["mock"]);
@@ -245,6 +247,7 @@ describe("/health in production with no keys (HTTP level)", () => {
     emptyConfigDir = suiteConfigDir = mkdtempSync(join(tmpdir(), "llm-gateway-test-config-"));
     freshCloneEnv();
     process.env.NODE_ENV = "production";
+    process.env.GATEWAY_API_KEY = "prod-test-admin-key";
     process.env.DATABASE_PATH = ":memory:";
     process.env.REDIS_URL = "redis://127.0.0.1:1";
     invalidateConfig();
@@ -270,7 +273,7 @@ describe("/health in production with no keys (HTTP level)", () => {
 
     const res = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer gateway-admin-key" },
+      headers: { "Content-Type": "application/json", Authorization: "Bearer prod-test-admin-key" },
       // Distinct prompt: the in-memory response cache is process-wide, and the
       // mock-mode suite above already cached a reply for "Hello".
       body: JSON.stringify({ model: "mock", messages: [{ role: "user", content: "Hello from a production deploy" }] }),

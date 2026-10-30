@@ -4,7 +4,7 @@ import type { GatewayConfig } from "../types";
 import type { RequestContext } from "../types/routing";
 import type { MiddlewareFunction } from "../proxy/handler";
 import type { BudgetTracker } from "../storage/budgetTracker";
-import { getPricing } from "../shared/pricing";
+import { getModelInfo } from "../shared/pricing";
 import { countMessageTokens } from "../shared/tokenCounter";
 
 /**
@@ -85,16 +85,22 @@ export async function trackSpend(
   await budgetTracker.deductBudget(apiKey, actualCost);
 }
 
+const OUTPUT_ESTIMATE_FALLBACK_TOKENS = 4096;
+
 /**
- * Estimates the cost of a request using model-specific pricing.
- * Uses characters / 4 as a token estimate, then multiplies by the
- * selected model's input token price.
+ * Estimates the worst-case cost of a request for budget admission.
+ * Input tokens are counted with gpt-tokenizer; output spend is reserved up to
+ * min(max_tokens, the cataloged model's output ceiling) so a client cannot
+ * declare a huge completion budget while reserving only its prompt's cost.
  * @param context - Request context.
  * @returns Estimated cost in USD.
  */
-function estimateRequestCost(context: RequestContext): number {
-  const estimatedTokens = countMessageTokens(context.messages);
-  const pricing = getPricing(context.originalModel);
-  const inputPrice = pricing?.inputPerToken ?? 0.00001;
-  return estimatedTokens * inputPrice;
+export function estimateRequestCost(context: RequestContext): number {
+  const inputTokens = countMessageTokens(context.messages);
+  const modelInfo = getModelInfo(context.originalModel);
+  const inputPrice = modelInfo?.pricing.inputPerToken ?? 0.00001;
+  const outputPrice = modelInfo?.pricing.outputPerToken ?? inputPrice;
+  const outputCeiling = modelInfo?.maxOutputTokens ?? OUTPUT_ESTIMATE_FALLBACK_TOKENS;
+  const estimatedOutput = Math.max(0, Math.min(context.maxTokens ?? outputCeiling, outputCeiling));
+  return inputTokens * inputPrice + estimatedOutput * outputPrice;
 }
