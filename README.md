@@ -12,9 +12,12 @@ Route requests across multiple providers (OpenAI, Anthropic, Gemini, Ollama) wit
 
 ## Quick Demo
 
+Minimum requirements: Node.js only — no API keys, `.env`, Redis, Docker or `make`.
+
 ```bash
 npm ci
 make demo
+# without make: npm run build && bash scripts/demo.sh
 ```
 
 No API keys, `.env` or Redis needed: builds the gateway, starts it on http://localhost:3000 with the
@@ -126,7 +129,9 @@ cp config/routing.example.yaml config/routing.yaml
 cp config/policy.example.yaml config/policy.yaml
 cp config/budgets.example.yaml config/budgets.yaml
 
-# Start Redis (required for caching and rate limiting)
+# Optional: start Redis via Docker for shared cache/rate-limit/budget state.
+# Skip this to run fully in-memory (default portable mode; STRICT_STORAGE=true
+# instead makes Redis/SQLite availability a readiness requirement).
 docker compose up redis -d
 
 # Start the gateway
@@ -216,6 +221,10 @@ tests/
   console in demo / live / empty states.
 
 ## 10. Deployment Notes
+
+Optional expansion — the gateway runs with only Node (in-memory storage) for
+local development and demos. Docker/Redis add shared state for multi-instance
+deployments.
 
 ```bash
 # Build and run with Docker
