@@ -42,7 +42,7 @@
   <p class="meta">2026-10-30 · scope: auth and access, secrets and config, request validation, error handling,
      AI failure modes, API-bill exposure · engineering audit, not a security certification</p>
 
-  <p class="verdict"><strong>Three exploitable gaps found and fixed with regression tests; four documented
+  <p class="verdict"><strong>Three exploitable gaps found and fixed with regression tests; five documented
      and left open.</strong> The baseline was already hardened — bcrypt key store, masked audit log, atomic
      budget reservations, retryable-aware fallback — which is why the findings are about the seams rather
      than the core.</p>
@@ -110,7 +110,7 @@
 <tr><td class="id">F2-maxtokens-negative</td><td>passed through to provider</td><td>400: max_tokens must be a nonnegative integer</td></tr>
 <tr><td class="id">F2-maxtokens-huge</td><td>passed through; input-only reservation made</td><td>400: max_tokens must not exceed 131072</td></tr>
 <tr><td class="id">F2-model-nonstring</td><td>forwarded; reached provider</td><td>400: model must be a string</td></tr>
-<tr><td class="id">F3-overshoot</td><td>reservation = input tokens only (~$0.00002); real spend up to ~$0.12</td><td>reservation = input + min(8192, 4096-ceiling) × $15e-6 output</td></tr>
+<tr><td class="id">F3-overshoot</td><td>reservation = prompt tokens only ($0.000005 on a one-token prompt); bill up to $0.1229</td><td>reservation = prompt + min(max_tokens, catalog ceiling) × output price — $0.061445 for gpt-4o</td></tr>
 <tr><td class="id">F3-undeclared</td><td>input-only reservation; model could emit full output window</td><td>reserves full cataloged output ceiling (4096 × output price)</td></tr>
 <tr><td class="id">F3-unknown-model</td><td>input-only at fallback rate</td><td>input at fallback rate + bounded 4096-ceiling output estimate &gt; 0</td></tr>
     </tbody>

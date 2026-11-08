@@ -9,7 +9,7 @@ AI failure modes, API-bill exposure)
 
 Substantially hardened baseline (bcrypt key store, masked audit log, atomic
 budget reservations, retryable-aware fallback, account-scoped cache). Three
-exploitable gaps found and fixed with regression tests; four documented for
+exploitable gaps found and fixed with regression tests; five documented for
 follow-up. Backend suite: 29 files / 246 tests green; `tsc --noEmit` and
 `eslint .` clean.
 
@@ -53,15 +53,16 @@ F2 block (8 cases incl. a no-silent-drop forwarding assertion).
 
 ### F3 — HIGH: Budget admission reserved input cost only
 
-`estimateRequestCost` priced only prompt tokens. A client declaring
-`max_tokens: 8192` reserved ~$0.0002 while the response could bill ~$0.12
-(gpt-4o output at $15/1M) — per-key budgets were trivially overrun on a
-single request, the exact API-bill exposure the gateway exists to prevent.
+`estimateRequestCost` priced only prompt tokens. A one-token prompt reserved
+$0.000005 while the same request, declaring `max_tokens: 8192`, could bill up to
+$0.1229 in output at gpt-4o's $15/1M — per-key budgets were trivially overrun on
+a single request, the exact API-bill exposure the gateway exists to prevent.
 
 **Fix:** estimate now adds `min(maxTokens ?? ceiling, ceiling) × outputPrice`
 using the cataloged model's `maxOutputTokens` (fallback 4096 for uncataloged
-models; clamps negatives). Reservation is a worst-case bound; settlement
-still records actual spend.
+models; clamps negatives). For gpt-4o that is $0.061445 against the same
+one-token prompt — the reservation now tracks the output the catalog says a
+request can produce. Settlement still records actual spend. The residual is D5.
 
 **Evidence:** `src/middleware/budget.ts` `estimateRequestCost`;
 `tests/l1Audit.test.ts` F3 block (4 cases); `tests/budget.test.ts` updated to
@@ -75,6 +76,7 @@ derive its expected estimate via the exported function.
 | D2 | Med | `z.any()` on `routing`/`policy`/`budgets` YAML sections — malformed operational config validates at load, misbehaves at request time | Replace with real Zod schemas mirroring `ProviderConfigSchema` |
 | D3 | Low-Med | `/metrics` and `/health` unauthenticated (providers, models, volumes, mock state); `cors()` wildcard | Optional bearer on `/metrics`; scope CORS origins in prod |
 | D4 | Low | `getGlobalSpend` runs `redis.keys("budget:*")` per request — O(keyspace) scan; global check is advisory-only | Track a single `budget:global` counter; SCAN if enumeration stays |
+| D5 | Med | **F3's fix is a clamp, not a guarantee.** The reservation uses the catalog's `maxOutputTokens`, so a client declaring above it (`gpt-4o`: 4,096 catalogued) reserves only the ceiling. If the provider honours the larger declared value, one in-flight request per key can overshoot the reserved amount by the difference before settlement records the actual spend | Either reject `max_tokens` above the catalogued ceiling, or size the catalog to the provider's real limit |
 
 ## Checked and cleared
 
