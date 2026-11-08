@@ -41,5 +41,12 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "overrides": {
+    "minimatch@<11.0.1": "11.0.5"
+  },
+  "allowScripts": {
+    "better-sqlite3": true,
+    "esbuild@0.28.2": true
   }
 }
