@@ -19,3 +19,5 @@ and in `docs/audit/REPORT.md`.
 
 The code excerpts are verbatim from those commits. Cards were rendered from HTML at 2× and downscaled
 to 1000×750 with Lanczos.
+
+**Social preview:** `docs/media/social-preview.png` is the 1280×640 GitHub card (a composite of the cover card with the repository name and thesis). Upload it in Settings → Social preview; a repo edit cannot set it.
