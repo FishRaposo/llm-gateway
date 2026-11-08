@@ -6,7 +6,9 @@
 
 Route requests across multiple providers (OpenAI, Anthropic, Gemini, Ollama) with automatic failover, response caching, and per-API-key cost control.
 
-[Quick Demo](#quick-demo) • [Case study](docs/portfolio-case-study.md) • [Architecture](#architecture) • [Configuration](#local-quickstart)
+**At a glance.** What it proves: a gateway where a bad default key, a dropped tool message or an optimistic budget cannot pass silently — each one is a refusal with a test behind it. How to see it: one Node-only command below, with no keys, no Redis and no Docker. Limits: a personal open-source build with no hosted deployment; the audit is engineering, not a security certification.
+
+[Quick Demo](#quick-demo) • [Audit](docs/audit/index.html) • [Case study](docs/portfolio-case-study.md) • [Architecture](#architecture) • [Configuration](#local-quickstart)
 
 ---
 
@@ -62,6 +64,20 @@ outage banner). For portfolio previews, use forced demo mode (`make demo-ui`) wh
 *Sample data — deterministic gateway fixtures.*
 
 ---
+
+## Audit (2026-10-30)
+
+An engineering audit of this gateway across auth and access, secrets and config, request validation, error
+handling, AI failure modes and API-bill exposure. Three exploitable gaps were found and fixed with
+regression tests: a default admin credential nothing stopped outside test mode, request fields that were
+never validated while tool messages were dropped in silence, and budget reservations that priced the prompt
+but not the output. Four more are documented and left open.
+
+Read it as a page: **[docs/audit/index.html](docs/audit/index.html)** — or the source of record,
+[docs/audit/REPORT.md](docs/audit/REPORT.md) with [eval-set.json](docs/audit/eval-set.json): twelve probes,
+each paired with its pre-fix behaviour and the behaviour expected after the fix.
+
+An audit is not a certification, and it excludes penetration testing.
 
 ## 1. What This Is
 

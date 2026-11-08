@@ -1,0 +1,79 @@
+{
+  "evalSet": "llm-gateway L1 audit probes",
+  "date": "2026-10-30",
+  "note": "Each case pairs a request/environment with the pre-fix behavior and the expected post-fix behavior. Cases F1-* drive resolveAdminApiKey/loadConfig; F2-* drive POST /v1/chat/completions through parseRequest; F3-* drive createBudgetMiddleware via estimateRequestCost.",
+  "cases": [
+    {
+      "id": "F1-prod-unset",
+      "env": { "NODE_ENV": "production", "GATEWAY_API_KEY": null },
+      "preFix": "boots with public admin credential; Bearer gateway-admin-key grants [*]",
+      "expected": "loadConfig throws: GATEWAY_API_KEY is unset or still the built-in default in production"
+    },
+    {
+      "id": "F1-prod-default",
+      "env": { "NODE_ENV": "production", "GATEWAY_API_KEY": "gateway-admin-key" },
+      "preFix": "explicitly-set default silently accepted",
+      "expected": "loadConfig throws (explicit default is still the public credential)"
+    },
+    {
+      "id": "F1-dev-unset",
+      "env": { "NODE_ENV": "development", "GATEWAY_API_KEY": null },
+      "preFix": "default used",
+      "expected": "default still used — fresh-clone demo path preserved"
+    },
+    {
+      "id": "F2-tool-role",
+      "request": { "messages": [{"role": "assistant", "content": "calling"}, {"role": "tool", "content": "result"}] },
+      "preFix": "200 computed over a truncated conversation; tool message silently dropped",
+      "expected": "400: Unsupported message role \"tool\": tool/function call results are not forwarded"
+    },
+    {
+      "id": "F2-function-role",
+      "request": { "messages": [{"role": "function", "content": "result"}] },
+      "preFix": "role forwarded as-is via cast; provider behavior undefined",
+      "expected": "400: Unsupported message role \"function\""
+    },
+    {
+      "id": "F2-unknown-role",
+      "request": { "messages": [{"role": "narrator", "content": "hi"}] },
+      "preFix": "forwarded as-is via cast",
+      "expected": "400: Unsupported message role \"narrator\""
+    },
+    {
+      "id": "F2-maxtokens-negative",
+      "request": { "max_tokens": -5, "messages": [{"role": "user", "content": "hi"}] },
+      "preFix": "passed through to provider",
+      "expected": "400: max_tokens must be a nonnegative integer"
+    },
+    {
+      "id": "F2-maxtokens-huge",
+      "request": { "max_tokens": 1000000, "messages": [{"role": "user", "content": "hi"}] },
+      "preFix": "passed through; input-only reservation made",
+      "expected": "400: max_tokens must not exceed 131072"
+    },
+    {
+      "id": "F2-model-nonstring",
+      "request": { "model": 42, "messages": [{"role": "user", "content": "hi"}] },
+      "preFix": "forwarded; reached provider",
+      "expected": "400: model must be a string"
+    },
+    {
+      "id": "F3-overshoot",
+      "context": { "originalModel": "gpt-4o", "maxTokens": 8192, "messages": [{"role": "user", "content": "hi"}] },
+      "preFix": "reservation = input tokens only (~$0.00002); real spend up to ~$0.12",
+      "expected": "reservation = input + min(8192, 4096-ceiling) × $15e-6 output"
+    },
+    {
+      "id": "F3-undeclared",
+      "context": { "originalModel": "gpt-4o", "maxTokens": null, "messages": [{"role": "user", "content": "hi"}] },
+      "preFix": "input-only reservation; model could emit full output window",
+      "expected": "reserves full cataloged output ceiling (4096 × output price)"
+    },
+    {
+      "id": "F3-unknown-model",
+      "context": { "originalModel": "uncataloged-x", "maxTokens": 50, "messages": [{"role": "user", "content": "hi"}] },
+      "preFix": "input-only at fallback rate",
+      "expected": "input at fallback rate + bounded 4096-ceiling output estimate > 0"
+    }
+  ]
+}
