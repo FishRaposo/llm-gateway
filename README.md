@@ -14,12 +14,11 @@ Route requests across multiple providers (OpenAI, Anthropic, Gemini, Ollama) wit
 
 ## Quick Demo
 
-Minimum requirements: Node.js only — no API keys, `.env`, Redis, Docker or `make`.
+Minimum requirements: Node.js only — no API keys, `.env`, Redis or Docker.
 
 ```bash
 npm ci
-make demo
-# without make: npm run build && bash scripts/demo.sh
+npm run build && bash scripts/demo.sh
 ```
 
 No API keys, `.env` or Redis needed: builds the gateway, starts it on http://localhost:3000 with the
@@ -36,9 +35,7 @@ exceeded, guardrail blocked). Each button appends an audit row and updates budge
 consistently — no backend required.
 
 ```bash
-make demo-ui          # http://localhost:3001 — forced demo mode
-# equivalent:
-cd dashboard && npm run demo:ui
+(cd dashboard && npm run demo:ui)   # http://localhost:3001 — forced demo mode
 ```
 
 Open http://localhost:3001.
@@ -60,7 +57,7 @@ NEXT_PUBLIC_GATEWAY_URL=http://localhost:3000 npm run dev
 ```
 
 When the backend is unreachable the dashboard falls back to sample data automatically (shorter
-outage banner). For portfolio previews, use forced demo mode (`make demo-ui`) which shows
+outage banner). For portfolio previews, use forced demo mode (`cd dashboard && npm run demo:ui`) which shows
 *Sample data — deterministic gateway fixtures.*
 
 ---

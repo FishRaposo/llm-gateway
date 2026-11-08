@@ -11,7 +11,7 @@ an append-only audit log, and Prometheus metrics. Migrated out of `General Proje
 
 This is a **pure TypeScript** project. `shared_core` is a Python library, so llm-gateway
 does **not** consume it — exactly like `game-systems-sandbox`. The migration conformed the
-**meta-structure only** (Makefile vocabulary, docs, AGENTS, registration, container names);
+**meta-structure only** (command vocabulary, docs, AGENTS, registration, container names);
 the application code is unchanged. Cross-language alignment with the Python
 `llm-cost-latency-monitor` is tracked as follow-ups (see roadmap.md), not code sharing.
 
@@ -32,21 +32,21 @@ llm-gateway/
 ├── config/                      # routing/policy/budget example YAML
 ├── data/sample/  tests/  scripts/  docs/
 ├── docker-compose.yml           # llm_gateway + llm_gateway_redis
-├── Makefile  package.json  tsconfig.json  eslint.config.mjs  .env.example
+├── package.json  tsconfig.json  eslint.config.mjs  .env.example
 └── .github/workflows/ci.yml
 ```
 
 ## Commands
 
 ```bash
-make install      # npm ci
-make dev          # tsx watch src/index.ts
-make build        # tsc -> dist/
-make test         # vitest run  -> 177 passing (backend); dashboard has 41 unit + 10 e2e
-make lint         # tsc --noEmit + eslint
-make typecheck    # tsc --noEmit
-make docker-up    # redis + gateway
-make demo         # offline: build, start in mock mode, send one request (prints a 200)
+npm ci                         # install
+npx tsx watch src/index.ts     # dev
+npm run build                  # tsc -> dist/
+npx vitest run                 # 246 backend tests; dashboard 41 unit + 10 e2e
+npx tsc --noEmit && npx eslint .  # lint
+npx tsc --noEmit               # typecheck
+docker compose up -d           # redis + gateway
+npm run build && bash scripts/demo.sh  # offline demo, prints a 200
 ```
 
 ## Current State
@@ -82,4 +82,4 @@ spec.
 ## When to Update This AGENTS.md
 
 - Provider adapters, middleware chain, or storage backends change
-- Makefile targets, docker-compose services, or CI steps change
+- docker-compose services or CI steps change

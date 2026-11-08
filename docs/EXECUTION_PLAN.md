@@ -8,12 +8,12 @@ This is the operational companion to [roadmap.md](./roadmap.md) (what) and
 
 ```mermaid
 flowchart LR
-    Install[make install<br/>npm ci] --> Type[make typecheck<br/>tsc --noEmit]
-    Type --> Lint[make lint<br/>tsc + eslint]
-    Lint --> Test[make test<br/>vitest run]
-    Test --> Build[make build<br/>tsc -> dist/]
+    Install[npm ci] --> Type[tsc --noEmit]
+    Type --> Lint[tsc + eslint]
+    Lint --> Test[vitest run]
+    Test --> Build[npm run build<br/>tsc -> dist/]
     Build --> Dash[dashboard<br/>tsc + vitest + next build]
-    Dash --> Docker[make docker-up<br/>redis + gateway]
+    Dash --> Docker[docker compose up -d<br/>redis + gateway]
 ```
 
 ## Verification gate (must stay green)
@@ -22,9 +22,9 @@ flowchart LR
 |---|---|---|
 | Typecheck (backend) | `npx tsc --noEmit` | clean |
 | Lint | `npx eslint .` | clean (0 errors) |
-| Backend tests | `npx vitest run` | **149 passing**, 20 files |
+| Backend tests | `npx vitest run` | **246 passing**, 29 files |
 | Dashboard typecheck | `cd dashboard && npx tsc --noEmit` | clean |
-| Dashboard tests | `cd dashboard && npx vitest run` | **27 passing**, 3 files |
+| Dashboard tests | `cd dashboard && npx vitest run` | **41 passing**, 4 files |
 | Dashboard build | `cd dashboard && npx next build` | success |
 | (optional) E2E smoke | `cd dashboard && npx playwright test` | demo-mode smoke green |
 
@@ -60,9 +60,9 @@ graph TD
 ## Local run
 
 ```bash
-make install        # npm ci
-make dev            # tsx watch src/index.ts
-make test           # vitest run
-make demo           # build + print a sample OpenAI-compatible request
+npm ci              # install
+npx tsx watch src/index.ts  # development server
+npx vitest run      # tests
+npm run build && bash scripts/demo.sh  # build + sample request
 cd dashboard && NEXT_PUBLIC_DEMO_MODE=true npm run build && npm start   # dashboard in demo mode
 ```

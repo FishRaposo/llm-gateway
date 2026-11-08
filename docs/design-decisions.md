@@ -8,7 +8,7 @@ subsequent comprehensive-bar hardening. Domain docs: [../ARCHITECTURE.md](../ARC
 - **Context:** the workspace's `shared_core` is a Python library; this gateway is
   TypeScript/Express.
 - **Choice:** do **not** introduce `shared_core` here (it cannot be consumed from Node).
-  Conform only the meta-structure — Makefile target vocabulary, docs, AGENTS, workspace
+  Conform only the meta-structure — command vocabulary, docs, AGENTS, workspace
   registration, and `<prefix>_redis` container naming — mirroring `game-systems-sandbox`,
   the existing TypeScript peer. Application code is unchanged.
 

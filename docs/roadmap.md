@@ -10,7 +10,7 @@ flowchart LR
 ```
 
 ## Now (done)
-- ✅ Meta-structure conformed (Makefile vocabulary, docs, AGENTS, registration).
+- ✅ Meta-structure conformed (command vocabulary, docs, AGENTS, registration).
 - ✅ `<prefix>_redis` / `<prefix>` container naming (`llm_gateway`, `llm_gateway_redis`).
 - ✅ `tsc --noEmit` clean; backend **vitest suite expanded 106 → 150** (pricing parity,
   CostService, rate-limit/logging middleware, metrics + monitor-alignment).

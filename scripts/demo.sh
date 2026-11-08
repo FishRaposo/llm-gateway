@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Offline demo: start the built gateway with the mock provider (no API keys,
 # no .env, no Redis), send one OpenAI-compatible request and print the reply.
-# Usage: make demo   (builds first)   or   DEMO_PORT=3005 scripts/demo.sh
+# Usage: npm run build && scripts/demo.sh   or   DEMO_PORT=3005 scripts/demo.sh
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -48,7 +48,7 @@ cleanup() {
 trap cleanup EXIT
 
 if [ ! -f dist/index.js ]; then
-  echo "dist/index.js not found: run 'npm run build' (or 'make demo') first." >&2
+  echo "dist/index.js not found: run 'npm run build' first." >&2
   exit 1
 fi
 
