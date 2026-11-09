@@ -30,4 +30,4 @@
 
 ## Remaining
 
-The public portfolio display remains the site-hosted `llm-gateway-audit/` page; this dashboard is the repo's product surface and is not separately deployed.
+The public portfolio display remains the site-hosted `llm-gateway-audit/` page; this dashboard is a product surface, not a demo deploy target (D-050).
