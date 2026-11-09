@@ -21,18 +21,22 @@
   .counts span { color: #8b949e; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
   .finding { border: 1px solid #21262d; border-radius: 8px; padding: 18px 20px; margin: 14px 0; background: #11161d; }
   .finding h3 { margin: 6px 0 10px; font-size: 17px; color: #f0f6fc; }
-  .tag { font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em;
+  .tag { font: 600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em;
           color: #fca5a5; background: #43151a; border: 1px solid #6b1d24; border-radius: 4px; padding: 5px 7px; }
   .fix { color: #c9d5e0; }
   .fix span { color: #86efac; font-weight: 600; }
   .evidence { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: #8b949e; margin-bottom: 0; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; color: #8b949e; font-weight: 600; font-size: 11px; text-transform: uppercase;
+  th { text-align: left; color: #8b949e; font-weight: 600; font-size: 12px; text-transform: uppercase;
         letter-spacing: .06em; border-bottom: 1px solid #30363d; padding: 8px 10px; }
   td { border-bottom: 1px solid #1b2128; padding: 9px 10px; vertical-align: top; }
   td.id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #93c5fd; white-space: nowrap; }
   ul { padding-left: 18px; } li { margin: 5px 0; }
   footer { margin-top: 46px; border-top: 1px solid #21262d; padding-top: 14px; color: #8b949e; font-size: 12px; }
+  .table-scroll { max-width: 100%; overflow-x: auto; }
+  .table-scroll:focus-visible { outline: 2px solid #93c5fd; outline-offset: 3px; }
+  .table-scroll table { min-width: 640px; }
+  a { display: inline-flex; min-height: 44px; align-items: center; }
   a { color: #93c5fd; }
 </style>
 </head>
@@ -75,7 +79,7 @@
 </article>
 
   <h2>Documented and left open</h2>
-  <table>
+  <div class="table-scroll" tabindex="0" aria-label="Audit evidence table"><table>
     <thead><tr><th>#</th><th>Sev</th><th>Finding</th><th>Recommendation</th></tr></thead>
     <tbody>
     <tr><td class="id">D1</td><td>Med</td><td>Provider error bodies flow verbatim into client responses and the audit record</td><td>Return typed error text to clients; keep the bounded body server-side</td></tr>
@@ -83,7 +87,7 @@
 <tr><td class="id">D3</td><td>Low-Med</td><td>/metrics and /health are unauthenticated; CORS is a wildcard</td><td>Optional bearer on /metrics; scope origins in production</td></tr>
 <tr><td class="id">D4</td><td>Low</td><td>Global spend runs a keyspace scan per request and is advisory only</td><td>A single global counter, or SCAN if enumeration stays</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h2>Checked and cleared</h2>
   <ul>
@@ -98,7 +102,7 @@
   <h2>Twelve probes</h2>
   <p class="meta">Each row pairs the request or environment with the behaviour before the fix and the
      behaviour expected after it. The set is executed by <code>tests/l1Audit.test.ts</code>.</p>
-  <table>
+  <div class="table-scroll" tabindex="0" aria-label="Audit evidence table"><table>
     <thead><tr><th>Case</th><th>Before the fix</th><th>Expected after</th></tr></thead>
     <tbody>
     <tr><td class="id">F1-prod-unset</td><td>boots with public admin credential; Bearer gateway-admin-key grants [*]</td><td>loadConfig throws: GATEWAY_API_KEY is unset or still the built-in default in production</td></tr>
@@ -114,7 +118,7 @@
 <tr><td class="id">F3-undeclared</td><td>input-only reservation; model could emit full output window</td><td>reserves full cataloged output ceiling (4096 × output price)</td></tr>
 <tr><td class="id">F3-unknown-model</td><td>input-only at fallback rate</td><td>input at fallback rate + bounded 4096-ceiling output estimate &gt; 0</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <footer>
     Source of record: <a href="REPORT.md">REPORT.md</a> and <a href="eval-set.json">eval-set.json</a>, both
