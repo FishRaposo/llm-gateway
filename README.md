@@ -8,7 +8,7 @@ Route requests across multiple providers (OpenAI, Anthropic, Gemini, Ollama) wit
 
 **At a glance.** What it proves: a gateway where a bad default key, a dropped tool message or an optimistic budget cannot pass silently — each one is a refusal with a test behind it. How to see it: one Node-only command below, with no keys, no Redis and no Docker. Limits: a personal open-source build with no hosted deployment; the audit is engineering, not a security certification.
 
-[Quick Demo](#quick-demo) • [Audit (rendered)](https://fishraposo.github.io/llm-gateway-audit/) • [Case study](docs/portfolio-case-study.md) • [Architecture](#architecture) • [Configuration](#local-quickstart)
+[Quick Demo](#quick-demo) • [Audit (rendered)](https://fishraposo.github.io/llm-gateway-audit/) • [Case study](docs/portfolio-case-study.md) • [Architecture](#4-architecture) • [Configuration](#5-local-quickstart)
 
 ---
 
@@ -203,24 +203,13 @@ curl -X POST http://localhost:3000/v1/chat/completions \
 
 ## 9. Testing Strategy
 
-The backend suite has **177 vitest tests** across 25 files; the optional dashboard has **41**
+The backend suite has **246 vitest tests** across 29 files; the optional dashboard has **41**
 component/unit tests across 4 files plus **10 Playwright browser tests** (desktop + mobile,
 including an axe accessibility suite). Run `npx vitest run` at the repo root and
 `cd dashboard && npx vitest run` / `npx playwright test` for the UI.
 
-```
-tests/
-├── routing.test.ts          # Rule evaluation, priority sorting, default fallback
-├── fallback.test.ts         # Provider fallback chains, circuit breaker, retry limits
-├── cache.test.ts            # Cache hits, misses, TTL expiry, key generation
-├── budget.test.ts           # Budget tracking, limit enforcement, alerting
-├── proxy.test.ts            # Full request pipeline, error handling, streaming
-├── rateLimit.test.ts        # Sliding-window limiting, per-key config, 429 path
-├── logging.test.ts          # Structured audit logging + API-key redaction
-├── pricing.test.ts          # Frozen pricing parity snapshot (archived shared_core v1.3.0, golden-gated)
-├── costService.test.ts      # Cost calc + model-pricing normalization
-└── monitorAlignment.test.ts # Audit + Prometheus key parity with the Python monitor
-```
+The backend suite covers routing, fallback, cache, budget, proxy, rate limiting, logging,
+pricing, stream semantics, storage durability, admin boundaries and cross-language parity.
 
 - **Unit tests**: each middleware and service tested in isolation with mocks.
 - **Integration tests**: full pipeline with the mock provider (no real API calls).

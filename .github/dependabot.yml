@@ -32,7 +32,7 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: ioredis
         update-types: ["version-update:semver-major"]
-      # Keep Node types on the runtime major (Dockerfile and CI use Node 20).
+      # Keep Node types on the runtime major (Dockerfile uses Node 22; CI pins 24.15).
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
 

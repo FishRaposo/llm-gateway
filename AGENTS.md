@@ -42,7 +42,7 @@ llm-gateway/
 npm ci                         # install
 npx tsx watch src/index.ts     # dev
 npm run build                  # tsc -> dist/
-npx vitest run                 # 246 backend tests; dashboard 41 unit + 10 e2e
+npx vitest run                 # 246 backend tests across 29 files; dashboard 41 unit + 10 e2e
 npx tsc --noEmit && npx eslint .  # lint
 npx tsc --noEmit               # typecheck
 docker compose up -d           # redis + gateway
@@ -51,8 +51,8 @@ npm run build && bash scripts/demo.sh  # offline demo, prints a 200
 
 ## Current State
 
-**Functional, migrated, green, hardened.** `tsc --noEmit` clean; **177 backend vitest tests
-pass** (25 files), plus **41 dashboard unit tests** (4 files) and **10 Playwright browser
+**Functional, migrated, green, hardened.** `tsc --noEmit` clean; **246 backend vitest tests
+pass** (29 files), plus **41 dashboard unit tests** (4 files) and **10 Playwright browser
 tests** (chromium + mobile, incl. axe); `eslint .` clean; `next build` green.
 Storage degrades gracefully: when the native `better-sqlite3` binding is unavailable (e.g. no
 C++ build tools), the API-key/audit stores fall back to in-memory — the full test suite runs
